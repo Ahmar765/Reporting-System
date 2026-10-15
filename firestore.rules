@@ -1,0 +1,7 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The authenticated Express API is the only data gateway (Admin SDK).
+    match /{document=**} { allow read, write: if false; }
+  }
+}

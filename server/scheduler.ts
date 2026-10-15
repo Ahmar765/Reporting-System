@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer';
 import { all, exec, now, audit, type DB, type Row } from './db.js';
 import { settings, isWorking, deadlineAt, reportingStatus, localToday } from './domain.js';
 let running = false;
-export async function runJobs(db: DB, instant = new Date()) {
+export async function runJobs(db: DB, instant = new Date(), options: { sendEmail?: boolean } = {}) {
   if (running) return {
     created: 0,
     busy: true
@@ -42,7 +42,7 @@ export async function runJobs(db: DB, instant = new Date()) {
     if (created) audit(db, null, 'reminders.generated', 'job', timestamp, null, {
       created
     });
-    if (process.env.SMTP_HOST && process.env.SMTP_FROM) {
+    if (options.sendEmail !== false && process.env.SMTP_HOST && process.env.SMTP_FROM) {
       const transport = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
         port: Number(process.env.SMTP_PORT || 587),

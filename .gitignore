@@ -6,3 +6,8 @@ data/
 test-results/
 playwright-report/
 build/
+.firebase/
+.env.*
+!.env.example
+service-account*.json
+.tools/

@@ -1,0 +1,8 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {"collectionGroup": "cadenceRecords", "fieldPath": "row", "indexes": []},
+    {"collectionGroup": "cadenceRecords", "fieldPath": "payload", "indexes": []},
+    {"collectionGroup": "parts", "fieldPath": "bytes", "indexes": []}
+  ]
+}

@@ -1,7 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { localAttachments, type AttachmentStore } from './attachments.js';
 import { parseUploadedTable } from './upload-data.js';
 import { securityHeaders, rateLimit } from './security.js';
 import { z, ZodError } from 'zod/v4';
@@ -27,7 +26,9 @@ class HttpError extends Error {
 function fail(status: number, message: string): never {
   throw new HttpError(status, message);
 }
-export function createApp(db: DB) {
+export function createApp(db: DB, options: { attachments?: AttachmentStore; sessionCookie?: string; allowedOrigins?: string[]; jobs?: () => Promise<unknown> } = {}) {
+  const attachments = options.attachments || localAttachments();
+  const sessionCookie = options.sessionCookie || 'bd_session';
   const app = express();
   app.disable('x-powered-by');
   if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
@@ -42,7 +43,7 @@ export function createApp(db: DB) {
   app.use('/api', (req, _res, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin) {
       const allowed = process.env.APP_ORIGIN || 'http://localhost:3000';
-      if (![allowed, ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'] : [])].includes(req.headers.origin)) return next(new HttpError(403, 'Origin not allowed'));
+      if (![allowed, ...(options.allowedOrigins || []), ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://127.0.0.1:3000'] : [])].includes(req.headers.origin)) return next(new HttpError(403, 'Origin not allowed'));
     }
     next();
   });
@@ -76,7 +77,7 @@ export function createApp(db: DB) {
     }
     exec(db, 'DELETE FROM login_attempts WHERE key=?', key);
     const session = createSession(db, user.id);
-    res.cookie('bd_session', session.token, {
+    res.cookie(sessionCookie, session.token, {
       httpOnly: true,
       sameSite: 'strict',
       secure: process.env.NODE_ENV === 'production',
@@ -90,7 +91,7 @@ export function createApp(db: DB) {
     });
   });
   app.use('/api', (req, _res, next) => {
-    const token = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith('bd_session='))?.slice(11);
+    const token = (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(sessionCookie + '='))?.slice(sessionCookie.length + 1);
     const hash = token ? digest(token) : '';
     const s = one(db, 'SELECT s.*,u.*,r.name AS role_name FROM sessions s JOIN users u ON u.id=s.user_id JOIN roles r ON r.id=u.role_id WHERE s.token_hash=? AND s.expires_at>? AND u.active=1', hash, now());
     if (!s) return next(new HttpError(401, 'Please sign in.'));
@@ -139,7 +140,7 @@ export function createApp(db: DB) {
   app.post('/api/auth/logout', (req, res) => {
     exec(db, 'DELETE FROM sessions WHERE token_hash=?', req.sessionHash);
     audit(db, req.user.id, 'auth.logout', 'user', req.user.id);
-    res.clearCookie('bd_session', {
+    res.clearCookie(sessionCookie, {
       path: '/'
     });
     res.json({
@@ -158,7 +159,7 @@ export function createApp(db: DB) {
       exec(db, 'DELETE FROM sessions WHERE user_id=?', req.user.id);
       audit(db, req.user.id, 'auth.password_changed', 'user', req.user.id);
     });
-    res.clearCookie('bd_session', {
+    res.clearCookie(sessionCookie, {
       path: '/'
     });
     res.json({
@@ -512,14 +513,8 @@ export function createApp(db: DB) {
     }
     const fileId = randomUUID(),
       storageName = fileId + '.' + extension;
-    const uploadDir = resolve('./data/uploads');
     const save = async () => {
-      await mkdir(uploadDir, {
-        recursive: true
-      });
-      await writeFile(resolve(uploadDir, storageName), body, {
-        flag: 'wx'
-      });
+      await attachments.put(storageName, body, mimeByExt[extension]);
       try {
         transaction(db, () => {
           exec(db, 'INSERT INTO report_files(id,report_id,user_id,original_name,extension,mime_type,byte_size,storage_name,sheet_name,columns_json,row_count,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', fileId, report.id, req.user.id, original, extension, mimeByExt[extension], body.length, storageName, parsed?.sheet || '', JSON.stringify(parsed?.columns || []), parsed?.rows.length || 0, now());
@@ -532,7 +527,7 @@ export function createApp(db: DB) {
           });
         });
       } catch (e) {
-        await unlink(resolve(uploadDir, storageName)).catch(() => {});
+        await attachments.remove(storageName).catch(() => {});
         throw e;
       }
     };
@@ -548,15 +543,16 @@ export function createApp(db: DB) {
       });
     });
   });
-  app.get('/api/files/:id', (req, res) => {
+  app.get('/api/files/:id', async (req, res) => {
     const f = one(db, 'SELECT * FROM report_files WHERE id=?', req.params.id);
     if (!f) fail(404, 'File not found.');
     scope(req, f.user_id);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'private, no-store');
-    res.download(resolve('./data/uploads', f.storage_name), f.original_name);
+    const bytes = await attachments.get(f.storage_name);
+    res.attachment(f.original_name).type(f.mime_type).send(bytes);
   });
-  app.delete('/api/files/:id', (req, res) => {
+  app.delete('/api/files/:id', async (req, res) => {
     const f = one(db, 'SELECT * FROM report_files WHERE id=?', req.params.id);
     if (!f) fail(404, 'File not found.');
     scope(req, f.user_id);
@@ -566,7 +562,7 @@ export function createApp(db: DB) {
       exec(db, 'DELETE FROM report_files WHERE id=?', f.id);
       audit(db, req.user.id, 'report.file_removed', 'report_file', f.id, f.original_name, null);
     });
-    void unlink(resolve('./data/uploads', f.storage_name)).catch(() => {});
+    await attachments.remove(f.storage_name);
     res.json({
       ok: true
     });
@@ -780,7 +776,7 @@ export function createApp(db: DB) {
   });
   app.post('/api/jobs/run', async (req, res) => {
     admin(req);
-    res.json(await runJobs(db));
+    res.json(await (options.jobs ? options.jobs() : runJobs(db)));
   });
   app.get('/api/audit', (req, res) => {
     admin(req);

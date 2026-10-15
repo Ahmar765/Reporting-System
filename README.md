@@ -120,6 +120,8 @@ This environment blocked registry downloads. Compatible local package copies wer
 
 ## Production deployment
 
+For the no-billing deployment to **Render Free + Firebase Firestore**, see [DEPLOYMENT.md](DEPLOYMENT.md). `npm run start:hosted` uses Firestore for permanent records and private file chunks; the local `npm start` path below continues to use SQLite and disk uploads.
+
 1. On a trusted build host with Node 24 LTS, run **npm ci**, the checks above, and **npm run build**.
 2. Ship **build/server/**, **dist/**, **package.json**, **npm-shrinkwrap.json**, **scripts/**, and install production dependencies with **npm ci --omit=dev**. For administrative CLI operations after deployment use the compiled commands above; interactive **npm run admin:create** also works after a build.
 3. Configure **NODE_ENV=production**, **APP_ORIGIN=https://reports.your-company.example**, **DATABASE_PATH=/var/lib/cadence/reporting.sqlite**, **PORT=3000**, and optional SMTP/font variables in a protected service environment file. The server refuses production startup without an HTTPS origin. Keep database/backups writable only by the service account. Do not place them under dist.
