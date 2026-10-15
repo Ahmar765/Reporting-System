@@ -1,0 +1,50 @@
+{
+  "name": "bd-reporting-system",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build && tsx watch server/index.ts --static",
+    "build": "tsc --noEmit && vite build --configLoader runner && tsc -p tsconfig.server.json && node scripts/copy-migrations.mjs",
+    "start": "node build/server/index.js --static",
+    "test": "tsx --test tests/*.test.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "admin:create": "node scripts/create-admin.mjs",
+    "db:migrate": "tsx server/migrate.ts",
+    "jobs:run": "tsx server/jobs.ts",
+    "test:e2e": "playwright test",
+    "dev:live": "tsx watch server/index.ts",
+    "admin:create:stdin": "node build/server/create-admin.js",
+    "backup": "node scripts/backup.mjs"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "3.25.76",
+    "pdfkit": "0.13.0",
+    "nodemailer": "9.1.0",
+    "lucide-react": "0.462.0",
+    "recharts": "2.15.4",
+    "dotenv": "17.4.2"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "tsx": "4.23.12",
+    "vite": "6.4.3",
+    "@vitejs/plugin-react": "4.7.0",
+    "@types/node": "26.2.0",
+    "@types/express": "5.0.6",
+    "@types/react": "18.3.23",
+    "@types/react-dom": "18.3.7",
+    "@types/nodemailer": "8.0.1",
+    "@playwright/test": "1.58.2",
+    "eslint": "9.32.0",
+    "typescript-eslint": "8.38.0",
+    "xlsx": "0.18.5"
+  },
+  "engines": {
+    "node": ">=24.0.0 <27"
+  }
+}

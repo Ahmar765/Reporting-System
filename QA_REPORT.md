@@ -1,0 +1,27 @@
+# Verification record
+
+Date: 2026-10-15. Environment: Windows, Node 24.18.0, local workspace.
+
+## Executed checks
+
+- Lint: PASS (ESLint).
+- Full TypeScript check: PASS.
+- Production frontend and compiled backend build: PASS. Largest emitted chunk ~355 KB; no chunk-size warning.
+- Unit and HTTP integration tests: 37 PASS, 0 FAIL. Includes database-backed sessions, direct access denial across employees, CSRF/origin checks, account creation/deactivation/session revocation, multi-entry reports, draft submission, duplicate/version conflicts, correction/approval/revisions, KPI/score history, weighted scoring/caps/zero and missing data, rate averaging, fixed quota proration, leave/holidays, timezone boundaries, first-submission compliance, deduplicated reminders, CSV formula protection, uploaded CSV/XLSX parsing and row permissions, file download isolation and immutability, independent XLSX export parsing, PDF signatures, score overrides and immutable audits.
+- Browser assertions: all 3 PASS with a clean runner exit. Employee draft/submit with multiple links, CSV insight upload and document attachments; admin approval, parsed-data table, bar and radar charts (with separate shared-string XLSX parser coverage), account creation/deactivation and inactive-employee drilldown; responsive checks at 320, 768, 1024, and 1440px; notifications empty state and injected service errors. PDF download is also exercised.
+- Visual QA: desktop dashboard and 320px daily-report screenshots inspected. The exported four-page fixture team PDF was rendered in Chromium's built-in PDF viewer and every page inspected; readable text, no clipping/overlaps, consistent metadata and page footers. Default Latin-script fonts were exercised.
+- Compiled application smoke: GET / and GET /api/health both returned 200. Automatic migrations ran on the empty company database.
+- Production-mode smoke: health 200, CSP and HSTS present, HTTPS-origin startup configuration exercised.
+- Initial-admin stdin CLI: PASS in an isolated in-memory database.
+- Company database integrity check: ok; 0 users, 0 reports, 55 default metric definitions.
+- Online SQLite backup command: PASS; produced a consistent backup in data/backups.
+
+## Environment and operational limits
+
+- Registry downloads were blocked. Compatible installed package copies were restored into this workspace, conflicting nested versions reconciled, and npm generated npm-shrinkwrap.json. The lock has no dependency on other project paths. A clean network installation and current online vulnerability audit remain unverified.
+- SMTP credentials and a public HTTPS domain were not supplied. In-app reminder logic is tested; actual provider delivery and public deployment are not claimed.
+- SQLite deployment is one application instance with persistent disk. Email sends are best effort; uncertain/failed sends are not automatically retried. Daily catch-up reminders cover 31 days.
+- Non-Latin/RTL PDF text was not verified. Supply licensed Unicode font paths for non-Latin glyph coverage; RTL shaping requires additional work.
+- Three earlier failed fixture runs left memory-only test listeners on loopback ports 3107, 3108, and 3109. Windows sandbox access denied termination attempts. They contain only clearly labeled Fixture data and example.test accounts, never company data. Stop those specific Node listeners through your normal Windows process controls when cleaning the environment. The final fixture implementation uses in-process setup/teardown on 3110 and releases its port.
+
+The company database has no default account or demonstration performance data. Create the initial administrator with the secure command in README.md.

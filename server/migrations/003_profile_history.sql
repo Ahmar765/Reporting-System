@@ -1,0 +1,2 @@
+CREATE TABLE profile_versions(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id),effective_date TEXT NOT NULL,snapshot TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(user_id,effective_date));
+INSERT INTO profile_versions(user_id,effective_date,snapshot,created_at) SELECT id,'0001-01-01',json_object('role_id',role_id,'workdays',workdays,'timezone',timezone,'deadline',deadline,'joining_date',joining_date),created_at FROM users;
