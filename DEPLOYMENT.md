@@ -1,5 +1,15 @@
 # Free deployment: Render + Firebase Spark
 
+## Current no-card route: temporary public preview
+
+Render requested a payment method for this account even with its Free plan selected. No Render service was created and no card was added. The alternative is a temporary Cloudflare Quick Tunnel running from this computer, backed by the migrated Firestore database. It is a preview, not an independent cloud deployment: the computer and both background processes must stay on and connected. No always-on availability is promised. Google billing remains disabled.
+
+Run `npm run build` and then `npm run preview:public` to start it. The official Cloudflare client must exist at `.tools/cloudflared.exe`; the Firebase runtime secret stays in ignored `.env.render-secret`. The startup script prints the real generated URL and stores process information in ignored `.tools/public-preview/processes.json`. It binds the app to loopback and configures its exact HTTPS origin. Logs are in `.tools/public-preview/`. Stop both processes with `npm run preview:stop`. Restarting creates a different public URL; the records and attachments remain in Firestore.
+
+The original local SQLite installation and this Firestore-backed preview are separate data stores after the import. Use the preview for subsequent cloud-backed changes.
+
+The remaining instructions describe the prepared Render route, which can be used only if Render's account requirements are resolved.
+
 This deployment uses a **Render Free web service** for the complete application and the **default Firestore Standard database** in Firebase project `cadence-53781`. Google billing stays disabled. Firebase Cloud Functions and Cloud Storage are not used.
 
 ## Data and files

@@ -25,3 +25,12 @@ Date: 2026-10-15. Environment: Windows, Node 24.18.0, local workspace.
 - Three earlier failed fixture runs left memory-only test listeners on loopback ports 3107, 3108, and 3109. Windows sandbox access denied termination attempts. They contain only clearly labeled Fixture data and example.test accounts, never company data. Stop those specific Node listeners through your normal Windows process controls when cleaning the environment. The final fixture implementation uses in-process setup/teardown on 3110 and releases its port.
 
 The company database has no default account or demonstration performance data. Create the initial administrator with the secure command in README.md.
+# Firebase and public-preview verification — 2026-10-15
+
+- Production build, lint, and all 41 unit/API tests passed. Hosted-backend tests cover Firestore record restoration, large UTF-8 pages, revision-cache invalidation, failed commits, session persistence, employee file isolation, and binary downloads.
+- The native Firestore import was checked against all 194 source documents and the original attachment bytes. Existing passwords were preserved and imported sessions were revoked.
+- Private Firestore rules and indexing exclusions were deployed successfully. The project still reports `billingEnabled: false`. The production-only dependency audit reports zero known vulnerabilities.
+- Render rejected creation of a Free service with a payment-verification requirement. No Render service or paid plan was created.
+- At the user's request, the app runs through a temporary Cloudflare Quick Tunnel from this computer. Public HTTPS returned 200 for the app and a healthy Firestore response; anonymous report access returned 401. The generated URL and process IDs are recorded in ignored `.tools/public-preview/processes.json`.
+- The preview depends on this computer, its network connection, and the two background processes. Restarting the tunnel changes the URL. See `DEPLOYMENT.md` for start/stop commands and the storage/availability limits.
+

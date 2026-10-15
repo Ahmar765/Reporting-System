@@ -20,7 +20,9 @@
     "backup": "node scripts/backup.mjs",
     "firebase:status": "node scripts/firebase-status.mjs",
     "firebase:import": "node scripts/firebase-import.mjs",
-    "deploy:firebase": "firebase deploy --only firestore --project cadence-53781"
+    "deploy:firebase": "firebase deploy --only firestore --project cadence-53781",
+    "preview:public": "powershell.exe -NoProfile -File scripts/start-public-preview.ps1",
+    "preview:stop": "powershell.exe -NoProfile -File scripts/stop-public-preview.ps1"
   },
   "dependencies": {
     "dotenv": "17.4.2",

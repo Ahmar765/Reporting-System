@@ -21,7 +21,7 @@ const app = createHostedApp(database, () => new FirestoreAttachments(firestore))
 app.use(express.static(resolve('dist')));
 app.get('/{*path}', (_req, res) => res.sendFile(resolve('dist/index.html')));
 const port = Number(process.env.PORT || 10000);
-const server = app.listen(port, '0.0.0.0', () => console.log('Cadence listening on port ' + port + ' with Firestore persistence.'));
+const server = app.listen(port, process.env.HOST || '0.0.0.0', () => console.log('Cadence listening on port ' + port + ' with Firestore persistence.'));
 let jobsRunning = false;
 const tick = async () => {
   if (jobsRunning) return;
