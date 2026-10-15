@@ -1,5 +1,5 @@
 import { DateTime } from './calendar.js';
-import { all, one, type DB, type Row } from './db.js';
+import { all, one, type ReadDB as DB, type Row } from './query.js';
 export const settings = (db: DB) => JSON.parse(one(db, 'SELECT value FROM settings WHERE id=1')!.value);
 export function localToday(zone = 'Asia/Karachi', instant = new Date()) {
   return DateTime.fromJSDate(instant, {

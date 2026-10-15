@@ -4,5 +4,18 @@
     {"collectionGroup": "cadenceRecords", "fieldPath": "row", "indexes": []},
     {"collectionGroup": "cadenceRecords", "fieldPath": "payload", "indexes": []},
     {"collectionGroup": "parts", "fieldPath": "bytes", "indexes": []}
+    ,{"collectionGroup": "cadenceConfig", "fieldPath": "tables", "indexes": []}
+    ,{"collectionGroup": "cadenceConfig", "fieldPath": "reviewers", "indexes": []}
+    ,{"collectionGroup": "cadenceProfiles", "fieldPath": "tables", "indexes": []}
+    ,{"collectionGroup": "cadenceProfiles", "fieldPath": "row", "indexes": []}
+    ,{"collectionGroup": "cadenceReports", "fieldPath": "activities", "indexes": []}
+    ,{"collectionGroup": "cadenceReports", "fieldPath": "files", "indexes": []}
+    ,{"collectionGroup": "cadenceReports", "fieldPath": "feedback", "indexes": []}
+    ,{"collectionGroup": "cadenceReports", "fieldPath": "report", "indexes": []}
+    ,{"collectionGroup": "history", "fieldPath": "state", "indexes": []}
+    ,{"collectionGroup": "history", "fieldPath": "legacySnapshot", "indexes": []}
+    ,{"collectionGroup": "cadenceAudit", "fieldPath": "before_json", "indexes": []}
+    ,{"collectionGroup": "cadenceAudit", "fieldPath": "after_json", "indexes": []}
+    ,{"collectionGroup": "cadenceFiles", "fieldPath": "metadata", "indexes": []}
   ]
 }

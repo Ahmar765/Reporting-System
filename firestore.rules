@@ -1,7 +1,179 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // The authenticated Express API is the only data gateway (Admin SDK).
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/cadenceProfiles/$(request.auth.uid)).data; }
+    function active() { return signedIn() && me().row.active == 1; }
+    function admin() { return active() && me().row.access == 'admin'; }
+    function own(owner) { return active() && me().row.id == owner; }
+    function scope(owner) { return admin() || own(owner); }
+    function stamp(d) { return d.actorUid == request.auth.uid && d.changedAt == request.time; }
+    function editable(r) { return r.report.status in ['draft', 'correction_requested']; }
+    function reportAfter(key) { return getAfter(/databases/$(database)/documents/cadenceReports/$(key)).data; }
+    function reportBefore(key) { return get(/databases/$(database)/documents/cadenceReports/$(key)).data; }
+    function validProfile(d, uid) {
+      return d.keys().hasOnly(['revision','uid','row','category_ids','tables','actorUid','changedAt'])
+        && d.uid == uid && d.row.id is int && d.row.id > 0 && d.row.id < 90000000
+        && d.row.keys().hasOnly(['id','email','name','employee_code','access','role_id','active','joining_date','timezone','workdays','deadline','notifications','email_notifications','created_at'])
+        && d.row.access in ['admin','employee'] && d.row.active in [0,1]
+        && d.category_ids is list && d.category_ids.size() <= 100
+        && d.tables.keys().hasOnly(['assignments','leave_days','profile_versions','reflections','overrides']);
+    }
+    match /cadenceProfiles/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || admin());
+      allow list: if admin();
+      allow create: if admin() && validProfile(request.resource.data, uid) && request.resource.data.revision == 0 && stamp(request.resource.data);
+      allow update: if active() && validProfile(request.resource.data, uid) && stamp(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.row.id == resource.data.row.id
+        && request.resource.data.row.email == resource.data.row.email
+        && (admin() && (uid != request.auth.uid || request.resource.data.row.access == 'admin' && request.resource.data.row.active == 1)
+          || uid == request.auth.uid && request.resource.data.row == resource.data.row
+            && request.resource.data.category_ids == resource.data.category_ids
+            && request.resource.data.tables.diff(resource.data.tables).affectedKeys().hasOnly(['reflections']));
+      allow delete: if false;
+    }
+    match /cadenceConfig/main {
+      allow read: if active();
+      allow update: if admin() && stamp(request.resource.data)
+        && request.resource.data.keys().hasOnly(['revision','tables','reviewers','actorUid','changedAt'])
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.tables.keys().hasOnly(['roles','categories','kpis','settings','scoring_configs','holidays']);
+      allow create, delete: if false;
+    }
+    function validReport(d, key) {
+      return d.keys().hasOnly(['revision','owner','ownerUid','report','activities','files','feedback','actorUid','changedAt','createdAt','firstSubmittedAt','submittedAt'])
+        && d.owner is int && d.report.user_id == d.owner
+        && key == string(d.owner) + '_' + d.report.date
+        && d.report.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.report.id is int && d.report.version is int
+        && d.report.status in ['draft','submitted','correction_requested','corrected','approved']
+        && d.report.keys().hasOnly(['id','user_id','date','status','achievements','blockers','missed_reason','lessons','suggestions','next_plan','assistance','created_at','updated_at','submitted_at','version','first_submitted_at'])
+        && d.activities is list && d.activities.size() <= 100
+        && d.files is map && d.files.size() <= 10 && d.feedback is list;
+    }
+    function identityUnchanged(d, old) {
+      return d.owner == old.owner && d.ownerUid == old.ownerUid
+        && d.report.id == old.report.id && d.report.user_id == old.report.user_id
+        && d.report.date == old.report.date && d.createdAt == old.createdAt;
+    }
+    function submissionStamp(d, old) {
+      let submitting = d.report.status in ['submitted','corrected'] && d.report.status != old.report.status;
+      return d.firstSubmittedAt == (old.firstSubmittedAt == null && submitting ? request.time : old.firstSubmittedAt)
+        && d.submittedAt == (submitting ? request.time : old.submittedAt);
+    }
+    function historyMatches(d, key) {
+      let h = getAfter(/databases/$(database)/documents/cadenceReports/$(key)/history/$(string(d.report.version))).data;
+      return h.owner == d.owner && h.reportKey == key && h.version == d.report.version
+        && h.actorUid == request.auth.uid && h.createdAt == request.time
+        && h.state.report == d.report && h.state.activities == d.activities
+        && h.state.files == d.files && h.state.feedback == d.feedback;
+    }
+    match /cadenceReports/{key} {
+      allow get: if active() && (resource == null ? admin() || key.matches('^' + string(me().row.id) + '_[0-9]{4}-[0-9]{2}-[0-9]{2}$') : scope(resource.data.owner));
+      allow list: if scope(resource.data.owner);
+      allow create: if own(request.resource.data.owner) && request.resource.data.ownerUid == request.auth.uid
+        && validReport(request.resource.data, key) && stamp(request.resource.data)
+        && request.resource.data.revision == 0 && request.resource.data.report.version == 1
+        && request.resource.data.report.id >= request.resource.data.owner * 100000000
+        && request.resource.data.report.id < (request.resource.data.owner + 1) * 100000000
+        && request.resource.data.report.status in ['draft','submitted'] && request.resource.data.feedback.size() == 0
+        && request.resource.data.files.size() == 0 && request.resource.data.createdAt == request.time
+        && request.resource.data.firstSubmittedAt == (request.resource.data.report.status == 'submitted' ? request.time : null)
+        && request.resource.data.submittedAt == request.resource.data.firstSubmittedAt
+        && historyMatches(request.resource.data, key);
+      allow update: if scope(resource.data.owner) && validReport(request.resource.data, key) && stamp(request.resource.data)
+        && identityUnchanged(request.resource.data, resource.data)
+        && request.resource.data.revision == resource.data.revision + 1
+        && submissionStamp(request.resource.data, resource.data)
+        && (request.resource.data.report.version == resource.data.report.version || historyMatches(request.resource.data, key))
+        && (
+          own(resource.data.owner) && editable(resource.data)
+          && request.resource.data.feedback == resource.data.feedback
+          && (request.resource.data.report == resource.data.report
+            || request.resource.data.report.version == resource.data.report.version + 1
+              && (resource.data.report.status == 'draft' && request.resource.data.report.status in ['draft','submitted']
+                || resource.data.report.status == 'correction_requested' && request.resource.data.report.status in ['correction_requested','corrected']))
+          || admin() && request.resource.data.activities == resource.data.activities
+            && request.resource.data.files == resource.data.files
+            && request.resource.data.report.diff(resource.data.report).affectedKeys().hasOnly(['status','version','updated_at'])
+            && resource.data.report.status != 'draft'
+            && (request.resource.data.report == resource.data.report
+              || request.resource.data.report.version == resource.data.report.version + 1
+                && (request.resource.data.report.status == 'correction_requested'
+                  || resource.data.report.status in ['submitted','corrected','approved'] && request.resource.data.report.status == 'approved'))
+        );
+      allow delete: if false;
+      match /history/{version} {
+        allow read: if scope(reportBefore(key).owner);
+        allow create: if scope(request.resource.data.owner)
+          && request.resource.data.actorUid == request.auth.uid && request.resource.data.createdAt == request.time
+          && request.resource.data.keys().hasOnly(['owner','reportKey','version','state','actorUid','createdAt'])
+          && version == string(request.resource.data.version)
+          && request.resource.data.state.report == reportAfter(key).report
+          && request.resource.data.state.activities == reportAfter(key).activities
+          && request.resource.data.state.files == reportAfter(key).files
+          && request.resource.data.state.feedback == reportAfter(key).feedback
+          && request.resource.data.state.createdAt == reportAfter(key).createdAt
+          && request.resource.data.state.firstSubmittedAt == reportAfter(key).firstSubmittedAt
+          && request.resource.data.state.submittedAt == reportAfter(key).submittedAt
+          && request.resource.data.owner == reportAfter(key).owner
+          && request.resource.data.version == reportAfter(key).report.version;
+        allow update, delete: if false;
+      }
+    }
+    match /cadenceFiles/{id} {
+      allow read: if scope(resource.data.owner);
+      allow create: if scope(request.resource.data.owner)
+        && editable(reportBefore(request.resource.data.reportKey))
+        && request.resource.data.owner == reportAfter(request.resource.data.reportKey).owner
+        && request.resource.data.metadata == reportAfter(request.resource.data.reportKey).files[id]
+        && request.resource.data.metadata.id == id
+        && request.resource.data.metadata.report_id == reportAfter(request.resource.data.reportKey).report.id
+        && request.resource.data.metadata.user_id == request.resource.data.owner
+        && request.resource.data.metadata.byte_size > 0 && request.resource.data.metadata.byte_size <= 5242880
+        && request.resource.data.dataChunks > 0 && request.resource.data.dataChunks <= 20
+        && request.resource.data.rowChunks > 0 && request.resource.data.rowChunks <= 8
+        && request.resource.data.rowBytes > 0 && request.resource.data.rowBytes <= 16777216;
+      allow update: if false;
+      allow delete: if scope(resource.data.owner) && editable(reportBefore(resource.data.reportKey))
+        && !(id in reportAfter(resource.data.reportKey).files);
+      match /parts/{part} {
+        function manifest() { return get(/databases/$(database)/documents/cadenceFiles/$(id)).data; }
+        function manifestAfter() { return getAfter(/databases/$(database)/documents/cadenceFiles/$(id)).data; }
+        allow read: if scope(manifest().owner);
+        allow create: if scope(manifestAfter().owner) && editable(reportBefore(manifestAfter().reportKey))
+          && !exists(/databases/$(database)/documents/cadenceFiles/$(id))
+          && request.resource.data.keys().hasOnly(['kind','index','bytes'])
+          && request.resource.data.kind in ['bytes','rows']
+          && request.resource.data.index is int && request.resource.data.index >= 0
+          && part == request.resource.data.kind + '-' + string(request.resource.data.index)
+          && request.resource.data.index < (request.resource.data.kind == 'bytes' ? manifestAfter().dataChunks : manifestAfter().rowChunks)
+          && request.resource.data.bytes is bytes && request.resource.data.bytes.size() <= 262144;
+        allow delete: if scope(manifest().owner) && editable(reportBefore(manifest().reportKey))
+          && !existsAfter(/databases/$(database)/documents/cadenceFiles/$(id));
+        allow update: if false;
+      }
+    }
+    match /cadenceNotifications/{id} {
+      allow get: if active() && (resource == null ? admin() || id.matches('^' + string(me().row.id) + '_.*$') : scope(resource.data.owner));
+      allow list: if scope(resource.data.owner);
+      allow create: if active() && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.owner == request.resource.data.user_id
+        && (admin() || own(request.resource.data.owner) && request.resource.data.kind in ['due','overdue','weekly','monthly']);
+      allow update: if admin() || own(resource.data.owner)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read_at'])
+        && request.resource.data.read_at == request.time;
+      allow delete: if false;
+    }
+    match /cadenceAudit/{id} {
+      allow read: if admin();
+      allow create: if active() && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.recordedAt == request.time
+        && (request.resource.data.actor_id == null || request.resource.data.actor_id == me().row.id);
+      allow update, delete: if false;
+    }
+    // The previous server database and all unlisted paths stay private.
     match /{document=**} { allow read, write: if false; }
   }
 }

@@ -1,0 +1,116 @@
+// Real Firebase client SDK + real security rules, entirely against local demo emulators.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createServer } from 'vite';
+import initSqlJs from 'sql.js';
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+import { terminate } from 'firebase/firestore';
+import { deleteApp } from 'firebase/app';
+import { fixture, TEST_PASSWORD, reportBody, assign } from '../tests/helpers.ts';
+import { all as nativeAll } from '../server/db.ts';
+import { captureConfig, captureProfile } from '../shared/spark-data.ts';
+process.env.VITE_FIREBASE_EMULATORS = '1';
+process.env.VITE_DATA_MODE = 'firebase';
+let vite, env, native;
+try {
+  env = await initializeTestEnvironment({ projectId: 'demo-cadence', firestore: { host: '127.0.0.1', port: 8085, rules: readFileSync('firestore.rules', 'utf8') } });
+  await env.clearFirestore();
+  native = await fixture();
+  assign(native, 2, 1, 20, 'daily', '2026-01-01');
+  const uidMap = new Map();
+  for (const u of nativeAll(native, 'SELECT * FROM users')) {
+    const response = await fetch('http://127.0.0.1:9098/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fixture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: u.email, password: TEST_PASSWORD, returnSecureToken: true }) });
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error?.message || 'Fixture auth creation failed.');
+    uidMap.set(u.id, data.localId);
+  }
+  await env.withSecurityRulesDisabled(async ctx => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, 'cadenceConfig/main'), { ...captureConfig(native), actorUid: 'fixture', changedAt: Timestamp.now() });
+    for (const u of nativeAll(native, 'SELECT * FROM users')) await setDoc(doc(d, 'cadenceProfiles', uidMap.get(u.id)), { ...captureProfile(native, u, uidMap.get(u.id)), actorUid: 'fixture', changedAt: Timestamp.now() });
+  });
+  vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+  const database = await vite.ssrLoadModule('/src/firebase/database.ts');
+  database.initializeProjectionEngine(await initSqlJs());
+  const { firebaseApi: api, firebaseUpload: upload } = await vite.ssrLoadModule('/src/firebase/service.ts');
+  const { exportReport } = await vite.ssrLoadModule('/src/firebase/export.ts');
+  const { readFile } = await vite.ssrLoadModule('/src/firebase/files.ts');
+  const { loadWorkspace, commitWorkspace } = await vite.ssrLoadModule('/src/firebase/store.ts');
+  await assert.rejects(api('/bootstrap'), /Please sign in/);
+  await api('/auth/login', { email: 'admin@example.test', password: TEST_PASSWORD });
+  assert.equal((await api('/bootstrap')).users.length, 3);
+  const fresh = { name: 'Invited Fixture', email: 'invited@example.test', employee_code: 'TEST-NEW', access: 'employee', role_id: 1, joining_date: '2026-01-01', timezone: 'Asia/Karachi', deadline: '22:00', workdays: [1, 2, 3, 4, 5], category_ids: [1], notifications: true, email_notifications: false, password: TEST_PASSWORD };
+  const created = await api('/users', fresh);
+  assert.equal(created.id, 4);
+  assert.equal((await api('/auth/me')).user.access, 'admin', 'Inviting must preserve the administrator session.');
+  await api('/auth/logout', {});
+  await api('/auth/login', { email: fresh.email, password: TEST_PASSWORD });
+  assert.equal((await api('/bootstrap')).users.length, 1);
+  await api('/auth/logout', {});
+  await api('/auth/login', { email: 'outreach@example.test', password: TEST_PASSWORD });
+  assert.equal((await api('/bootstrap')).users.length, 1);
+  const body = reportBody('2026-10-15', 1); body.activities[0].links = ['https://example.test/evidence'];
+  const draft = await api('/reports', body);
+  assert.equal(draft.status, 'draft');
+  const csv = new File(['Client,Revenue\nAcme,120\nBeta,250'], 'fixture.csv', { type: 'text/csv' });
+  const attached = await upload(`/reports/${draft.id}/files`, csv);
+  assert.equal(attached.file.row_count, 2);
+  const file = await readFile(attached.file.id, 'bytes');
+  assert.equal(new TextDecoder().decode(file.bytes), await csv.text());
+  const table = await api(`/reports/${draft.id}/upload-data`);
+  assert.equal(table.rows.length, 2); assert.equal(table.rows[1].values.Client, 'Beta');
+  const { writeWorkbook } = await vite.ssrLoadModule('/src/firebase/xlsx.ts');
+  const workbook = new File([new Uint8Array(writeWorkbook([{ name: 'Fixture', rows: [['Task', 'Count'], ['Calls', 12]] }]))], 'fixture.xlsx');
+  const xlsx = await upload(`/reports/${draft.id}/files`, workbook);
+  assert.equal(xlsx.file.row_count, 1);
+  const maxFile = await upload(`/reports/${draft.id}/files`, new File([new Uint8Array(5 * 1024 * 1024).fill(7)], 'maximum.pdf'));
+  assert.equal((await readFile(maxFile.file.id, 'bytes')).bytes.length, 5 * 1024 * 1024);
+  await api('/files/' + maxFile.file.id, undefined, 'DELETE');
+  const before = await api(`/reports/${draft.id}`);
+  assert.equal(before.files.length, 2);
+  const submitted = await api('/reports', { ...body, version: before.version, submit: true });
+  assert.equal(submitted.status, 'submitted');
+  await assert.rejects(api('/reports', { ...body, version: submitted.version }), /Submitted reports require/);
+  let cloud;
+  await env.withSecurityRulesDisabled(async ctx => { cloud = await getDoc(doc(ctx.firestore(), 'cadenceReports/2_2026-10-15')); });
+  assert.ok(cloud.get('firstSubmittedAt') instanceof Timestamp);
+  assert.ok((await api(`/reports/${draft.id}`)).revisions.length >= 2);
+  for (const format of ['csv', 'xlsx', 'pdf']) {
+    const blob = await exportReport(`/export/${format}?start=2026-10-15&end=2026-10-15&dataset=summaries`);
+    assert.ok(blob.size > 100, `${format} export should contain a full report.`);
+    const header = new TextDecoder().decode(new Uint8Array(await blob.arrayBuffer()).slice(0, 5));
+    if (format === 'pdf') assert.equal(header, '%PDF-');
+    if (format === 'xlsx') assert.equal(header.slice(0, 2), 'PK');
+    if (format === 'csv') { const text = await blob.text(); assert.match(text, /Fixture Outreach/); assert.doesNotMatch(text, /Fixture Developer/); }
+  }
+  await api('/auth/logout', {});
+  await api('/auth/login', { email: 'developer@example.test', password: TEST_PASSWORD });
+  await assert.rejects(api(`/reports/${draft.id}`), /Report not found/);
+  await assert.rejects(readFile(attached.file.id, 'bytes'));
+  await api('/auth/logout', {});
+  await api('/auth/login', { email: 'admin@example.test', password: TEST_PASSWORD });
+  await api(`/reports/${draft.id}/review`, { action: 'request_correction', comment: 'Please clarify the outcome.', quality: 80, learning: 90, improvement_plan: '' });
+  assert.equal((await api('/admin/upload-data?start=2026-10-15&end=2026-10-15')).files.length, 0);
+  const stale = await loadWorkspace(), current = await loadWorkspace();
+  database.exec(current.db, "INSERT INTO roles(name) VALUES('Fresh role')");
+  await commitWorkspace(current); current.db.close();
+  database.exec(stale.db, "INSERT INTO roles(name) VALUES('Stale role')");
+  await assert.rejects(commitWorkspace(stale), /changed in another window/); stale.db.close();
+  await api('/auth/logout', {});
+  await api('/auth/login', { email: 'outreach@example.test', password: TEST_PASSWORD });
+  const correction = await api(`/reports/${draft.id}`);
+  const corrected = await api('/reports', { ...body, version: correction.version, submit: true, achievements: 'Clarified fixture outcome' });
+  assert.equal(corrected.status, 'corrected');
+  assert.equal((await api('/notifications')).some(n => n.kind === 'review'), true);
+  await api('/notifications/read', {});
+  assert.equal((await api('/bootstrap')).unread, 0);
+  console.log('PASS: Firebase login, membership, invitation, reporting, private CSV upload/download, parsed rows, submission/history, CSV/XLSX/PDF exports, correction, cross-user isolation, concurrent write protection, and notifications.');
+  await api('/auth/logout', {});
+} finally {
+  if (vite) {
+    const config = await vite.ssrLoadModule('/src/firebase/config.ts');
+    await terminate(config.firestore); await deleteApp(config.app); await vite.close();
+  }
+  await env?.cleanup(); native?.close();
+}

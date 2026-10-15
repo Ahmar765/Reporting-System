@@ -1,3 +1,4 @@
+import { FileDownload } from './FileDownload';
 import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { api, type Row } from './api';
@@ -60,7 +61,7 @@ export default function ReportUploadInsights({
                   }} /><Radar name="Relative average" dataKey="value" stroke="#27745f" fill="#73a28a" fillOpacity={0.42} /><Tooltip /></RadarChart></ResponsiveContainer></div></section></div>}
  <div className="table-scroll"><table><thead><tr><th>Row</th>{headers.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.slice(0, 250).map((r: Row) => <tr key={r.file_id + ':' + r.row_number}><td>{r.row_number}</td>{headers.map(h => <td key={h}>{String(r.values[h] ?? '')}</td>)}</tr>)}</tbody></table></div>{rows.length > 250 && <p className="muted small">Showing first 250 filtered rows. Use the original attachment for the full spreadsheet.</p>}
  </>}
- <div className="compact-list report-file-list">{files.map(f => <div key={f.id}><strong>{f.original_name}</strong><span>{f.extension.toUpperCase()} · {Math.round(Number(f.byte_size) / 1024).toLocaleString()} KB · {f.row_count || 0} rows · <a href={'/api/files/' + f.id}>Download</a></span></div>)}</div>
+ <div className="compact-list report-file-list">{files.map(f => <div key={f.id}><strong>{f.original_name}</strong><span>{f.extension.toUpperCase()} · {Math.round(Number(f.byte_size) / 1024).toLocaleString()} KB · {f.row_count || 0} rows · <FileDownload id={f.id} /></span></div>)}</div>
  </>}
  </section>;
 }

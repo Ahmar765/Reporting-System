@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Plus, Users, Target, Pencil, ShieldCheck } from 'lucide-react';
-import { api, localDate, number, type Row } from './api';
+import { api, firebaseMode, localDate, number, type Row } from './api';
 import { Field, Badge, Empty } from './components';
 type Props = {
   data: Row;
@@ -57,7 +57,7 @@ export function Team({
       }
     }}><div className="panel-heading"><h2>{form.id ? 'Edit profile' : 'Create employee account'}</h2><button className="text-button" type="button" onClick={() => setForm(null)}>Cancel</button></div><div className="form-grid three"><Field label="Full name"><input required value={form.name} onChange={e => set({
             name: e.target.value
-          })} /></Field><Field label="Email address"><input required type="email" autoComplete="off" value={form.email} onChange={e => set({
+          })} /></Field><Field label="Email address"><input required type="email" autoComplete="off" readOnly={firebaseMode && !!form.id} value={form.email} onChange={e => set({
             email: e.target.value
           })} /></Field><Field label="Employee identifier"><input required value={form.employee_code} onChange={e => set({
             employee_code: e.target.value
@@ -79,24 +79,24 @@ export function Team({
             category_ids: e.target.checked ? [...form.category_ids, c.id] : form.category_ids.filter((v: number) => v !== c.id)
           })} />{c.name}</label>)}</fieldset><div className="checks"><label><input type="checkbox" checked={!!form.notifications} onChange={e => set({
             notifications: e.target.checked
-          })} />In-app reminders</label><label><input type="checkbox" checked={!!form.email_notifications} onChange={e => set({
+          })} />In-app reminders</label><label><input type="checkbox" disabled={firebaseMode} checked={!firebaseMode && !!form.email_notifications} onChange={e => set({
             email_notifications: e.target.checked
-          })} />Email reminders when SMTP is configured</label></div><button disabled={busy} className="primary">{busy ? 'Saving…' : 'Save employee'}</button></form>}
+          })} />{firebaseMode ? 'Email reminders unavailable on this free deployment' : 'Email reminders when SMTP is configured'}</label></div><button disabled={busy} className="primary">{busy ? 'Saving…' : 'Save employee'}</button></form>}
  {reset && <form className="panel" onSubmit={async e => {
       e.preventDefault();
       try {
         await api('/users/' + reset.id + '/password', {
-          password: reset.password
+          ...(firebaseMode ? {} : { password: reset.password })
         });
         setReset(null);
-        toast('Password reset. Existing sessions revoked.');
+        toast(firebaseMode ? 'Password reset email sent to the employee.' : 'Password reset. Existing sessions revoked.');
       } catch (err) {
         setError((err as Error).message);
       }
-    }}><h2>Reset password · {reset.name}</h2><Field label="New password (12+ characters)"><input required minLength={12} type="password" autoComplete="new-password" value={reset.password} onChange={e => setReset({
+    }}><h2>Reset password · {reset.name}</h2>{firebaseMode ? <p>A password reset link will be emailed to {reset.email}.</p> : <Field label="New password (12+ characters)"><input required minLength={12} type="password" autoComplete="new-password" value={reset.password} onChange={e => setReset({
           ...reset,
           password: e.target.value
-        })} /></Field><div className="inline"><button className="primary">Reset password</button><button type="button" onClick={() => setReset(null)}>Cancel</button></div></form>}
+        })} /></Field>}<div className="inline"><button className="primary">{firebaseMode ? 'Send reset email' : 'Reset password'}</button><button type="button" onClick={() => setReset(null)}>Cancel</button></div></form>}
  <section className="panel"><div className="panel-heading"><h2><Users size={18} />Team members</h2><input type="search" aria-label="Search employees" placeholder="Search name, role or email…" value={search} onChange={e => setSearch(e.target.value)} /></div><div className="table-scroll"><table><thead><tr><th>Employee</th><th>Role / access</th><th>Schedule</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.users.filter((u: Row) => (u.name + ' ' + u.role_name + ' ' + u.email).toLowerCase().includes(search.toLowerCase())).map((u: Row) => <tr key={u.id}><td><strong>{u.name}</strong><small>{u.email} · {u.employee_code}</small></td><td>{u.role_name}<small>{u.access}</small></td><td>{u.deadline}<small>{u.timezone}</small></td><td><Badge status={u.active ? 'active' : 'inactive'} /></td><td><div className="inline"><button className="icon-button" aria-label={'Edit ' + u.name} onClick={() => {
                     setForm({
                       ...u,

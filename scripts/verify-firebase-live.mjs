@@ -1,0 +1,15 @@
+import { readFileSync, readdirSync } from 'node:fs';
+const origin = 'https://cadence-53781.web.app';
+const local = JSON.parse(readFileSync('dist/deployment.json', 'utf8'));
+const home = await fetch(origin, { cache: 'no-store' });
+if (!home.ok || !(await home.text()).includes('Cadence')) throw Error('The live homepage is unavailable.');
+const manifestResponse = await fetch(origin + '/deployment.json', { cache: 'no-store' });
+const manifest = await manifestResponse.json();
+if (!manifestResponse.ok || manifest.mode !== 'firebase-spark' || manifest.sourceHash !== local.sourceHash) throw Error('The live deployment does not match the verified build.');
+const wasm = readdirSync('dist/assets').find(n => n.endsWith('.wasm'));
+const wasmResponse = await fetch(origin + '/assets/' + wasm);
+const bytes = new Uint8Array(await wasmResponse.arrayBuffer());
+if (!wasmResponse.ok || bytes[0] !== 0 || bytes[1] !== 97 || bytes[2] !== 115 || bytes[3] !== 109) throw Error('The live reporting calculation engine is unavailable.');
+const anonymous = await fetch('https://firestore.googleapis.com/v1/projects/cadence-53781/databases/(default)/documents/cadenceConfig/main?key=AIzaSyAXKAm7mF6v8y4JJMyPkGYuK9_UK5oxLFg');
+if (anonymous.status !== 403) throw Error('Anonymous workspace data access was not rejected.');
+console.log(JSON.stringify({ url: origin, homepage: home.status, matchingBuild: true, calculationEngine: wasmResponse.status, anonymousDataAccess: anonymous.status }));

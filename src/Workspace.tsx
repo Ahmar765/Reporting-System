@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, Bell, CheckCheck, FileSpreadsheet, FileText, Settings2 } from 'lucide-react';
-import { api, timestamp, localDate, type Row } from './api';
+import { api, apiBlob, firebaseMode, timestamp, localDate, type Row } from './api';
 import { Field, Badge, Empty } from './components';
 type Props = {
   data: Row;
@@ -71,14 +71,14 @@ export function Settings({
             })} /></Field><Field label="Monthly review time"><input type="time" value={settings.monthlyTime} onChange={e => setSettings({
               ...settings,
               monthlyTime: e.target.value
-            })} /></Field></div><p className="notice">The scheduler runs every minute while the server is running. Each profile has its own daily deadline and timezone. Email requires SMTP environment configuration; delivery status is visible in notifications.</p><div className="inline"><button className="primary">Save reporting settings</button><button type="button" onClick={async () => {
+            })} /></Field></div><p className="notice">{firebaseMode ? 'Reminders appear when you open the workspace or refresh your inbox. Each profile keeps its own deadline and timezone. Background and email reminders are unavailable on this free deployment.' : 'The scheduler runs every minute while the server is running. Each profile has its own daily deadline and timezone. Email requires SMTP environment configuration; delivery status is visible in notifications.'}</p><div className="inline"><button className="primary">Save reporting settings</button><button type="button" onClick={async () => {
             try {
               const r = await api('/jobs/run', {});
               toast(r.created + ' new notifications generated.');
             } catch (e) {
               setError((e as Error).message);
             }
-          }}>Run reminders now</button></div></form><div className="dashboard-grid"><form className="panel" onSubmit={e => {
+          }}>{firebaseMode ? 'Refresh my reminders' : 'Run reminders now'}</button></div></form><div className="dashboard-grid"><form className="panel" onSubmit={e => {
           e.preventDefault();
           void submit('/holidays', holiday);
         }}><h2>Company holidays</h2><Field label="Holiday date"><input required type="date" value={holiday.date} onChange={e => setHoliday({
@@ -129,7 +129,7 @@ export function Settings({
       } catch (e) {
         setError((e as Error).message);
       }
-    }}><h2>Change your password</h2><p className="muted">Changing your password signs out every session, including this one.</p><div className="form-grid"><Field label="Current password"><input required type="password" autoComplete="current-password" value={password.current} onChange={e => setPassword({
+    }}><h2>Change your password</h2><p className="muted">{firebaseMode ? 'Changing your password signs you out. Sign in again with your new password.' : 'Changing your password signs out every session, including this one.'}</p><div className="form-grid"><Field label="Current password"><input required type="password" autoComplete="current-password" value={password.current} onChange={e => setPassword({
             ...password,
             current: e.target.value
           })} /></Field><Field label="New password (12+ characters)"><input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={password.password} onChange={e => setPassword({
@@ -153,12 +153,7 @@ export function Exports({
         ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)),
         dataset
       } as Record<string, string>);
-      const response = await fetch('/api/export/' + format + '?' + query);
-      if (!response.ok) {
-        const data = await response.json();
-        throw Error(data.error);
-      }
-      const url = URL.createObjectURL(await response.blob());
+      const url = URL.createObjectURL(await apiBlob('/export/' + format + '?' + query));
       const a = document.createElement('a');
       a.href = url;
       a.download = 'cadence-' + dataset + '-' + filters.start + '-' + filters.end + '.' + format;
@@ -194,7 +189,7 @@ export function Notifications({
         } catch (e) {
           setError((e as Error).message);
         }
-      }}><CheckCheck size={16} />Mark all as read</button></div>{error && <div className="error" role="alert">{error}</div>}<section className="panel">{rows === null ? <div className="skeleton" aria-busy="true"><div /></div> : rows.length ? rows.map(n => <article className={'notification ' + (!n.read_at ? 'unread' : '')} key={n.id}><Bell size={19} /><div><h2>{n.title}</h2><p>{n.message}</p><small>{timestamp(n.created_at, data.user.timezone)} · Email: {n.email_status.replaceAll('_', ' ')}{n.delivered_at ? ' · ' + timestamp(n.delivered_at, data.user.timezone) : ''}</small></div>{!n.read_at && <Badge status="new" />}</article>) : <Empty title="You’re all caught up" text="Reminders and review notifications will appear here when they’re due." />}</section></>;
+      }}><CheckCheck size={16} />Mark all as read</button></div>{error && <div className="error" role="alert">{error}</div>}<section className="panel">{rows === null ? <div className="skeleton" aria-busy="true"><div /></div> : rows.length ? rows.map(n => <article className={'notification ' + (!n.read_at ? 'unread' : '')} key={n.id}><Bell size={19} /><div><h2>{n.title}</h2><p>{n.message}</p><small>{timestamp(n.created_at, data.user.timezone)}{!firebaseMode && <> · Email: {n.email_status.replaceAll('_', ' ')}</>}{n.delivered_at ? ' · ' + timestamp(n.delivered_at, data.user.timezone) : ''}</small></div>{!n.read_at && <Badge status="new" />}</article>) : <Empty title="You’re all caught up" text="Reminders and review notifications will appear here when they’re due." />}</section></>;
 }
 export function Audit() {
   const [result, setResult] = useState<Row | null>(null);

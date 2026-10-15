@@ -1,6 +1,8 @@
 export type Row = Record<string, any>;
+export const firebaseMode = import.meta.env.VITE_DATA_MODE === 'firebase';
 let csrf = '';
 export async function api(path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') {
+  if (firebaseMode) return (await import('./firebase/service')).firebaseApi(path, body, method);
   let res: Response;
   try {
     res = await fetch('/api' + path, {
@@ -42,6 +44,7 @@ export const timestamp = (v: string | null, zone = 'Asia/Karachi') => v ? new In
   timeZone: zone
 }).format(new Date(v)) : 'Not submitted';
 export async function apiUpload(path: string, file: File) {
+  if (firebaseMode) return (await import('./firebase/service')).firebaseUpload(path, file);
   let res: Response;
   try {
     res = await fetch('/api' + path, {
@@ -62,4 +65,14 @@ export async function apiUpload(path: string, file: File) {
   }));
   if (!res.ok) throw Error(data.error || 'Upload failed');
   return data;
+}
+export async function apiBlob(path: string) {
+  if (firebaseMode) return (await import('./firebase/export')).exportReport(path);
+  const response = await fetch('/api' + path);
+  if (!response.ok) throw Error((await response.json()).error || 'Download failed.');
+  return response.blob();
+}
+export async function downloadAttachment(id: string) {
+  if (firebaseMode) return (await import('./firebase/files')).downloadFile(id);
+  window.location.assign('/api/files/' + encodeURIComponent(id));
 }

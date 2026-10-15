@@ -1,8 +1,14 @@
 # Cadence - BD Team Reporting & Performance Analytics
 
+The cloud version is live at **https://cadence-53781.web.app**, using **Firebase Hosting + Firebase Authentication + Firestore on the free Spark plan**. It runs independently of this computer. See [DEPLOYMENT.md](DEPLOYMENT.md) for the Firebase build, migration, permissions, and free-plan limits. Use `npm run build:firebase` for Hosting; `npm run build` retains the original local/server version described below.
+
+The Firebase version preserves daily reports, reviews, versioned targets and scoring, private attachments, parsed spreadsheet insights, reflections, and CSV/XLSX/PDF downloads. Reminders are refreshed when the workspace is opened; unattended scheduling and SMTP reminders are unavailable. Firebase Authentication manages browser sign-in persistence and passwords.
+
 A working internal reporting application for a 6-15 person business development team. It starts with an empty company database, default job roles, eight reporting categories, and a configurable metric library. There are **no default credentials or seeded company performance records**. All fixture accounts and results live in isolated automated tests.
 
 ## Architecture and technology choices
+
+This section describes the original local/server implementation. The current cloud architecture is documented in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - **React 18 + TypeScript + Vite** provide a responsive employee portal and administrator workspace. Recharts renders charts from authenticated API responses. Lucide supplies icons. System fonts avoid external font requests.
 - **Express 5 + TypeScript on Node 24 LTS** implements the API, validation, authorization, exports, and background reminders. The production build compiles the backend to JavaScript; no development compiler is needed by the running server.

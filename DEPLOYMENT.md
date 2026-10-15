@@ -1,4 +1,48 @@
-# Free deployment: Render + Firebase Spark
+# Firebase Spark deployment
+
+The live deployment at **https://cadence-53781.web.app** uses **Firebase Hosting, Firebase Authentication (email/password), and Cloud Firestore**. It requires no local server, Cloud Functions, Cloud Run, Cloud Storage, Render account, or billing account.
+
+## Build and publish
+
+1. Authenticate the Firebase CLI with an account that owns `cadence-53781`.
+2. Run `npm run typecheck`, `npm test`, and `node scripts/test-firebase.mjs --integration`. The latter uses only local demo emulators; Java 21+ must be available. An optional workspace-local runtime is discovered in `.tools/java21`.
+3. Run `npm run build:firebase`. This regenerates the browser adapters from the established report routes, checks TypeScript, and builds a static Firebase version into `dist/`.
+4. Deploy with `npx firebase deploy --only firestore,hosting --project cadence-53781 --account OWNER_EMAIL`.
+
+`npm run build` remains the original local/server build. Always use **build:firebase** immediately before a Firebase Hosting deployment. Firebase serves only `dist/`; credentials, databases, and source files are excluded from the public deployment.
+
+Read-only post-deployment checks: `node scripts/verify-firebase-live.mjs`. The one-time migration can be independently checked against the archived source with `npx tsx scripts/firebase-spark-verify.ts --account OWNER_EMAIL`; after real users change the new workspace, source comparisons may legitimately differ.
+
+## One-time migration
+
+Initialize Authentication with **Get started** in the Firebase console. `node scripts/firebase-auth-setup.mjs --apply --account OWNER_EMAIL` enables email/password sign-in and the Hosting authentication domains. It verifies billing is disabled; it does not enable billing or upgrade Identity Platform.
+
+`npm run firebase:migrate:spark -- --account OWNER_EMAIL` previews the existing cloud database. For the final cutover, stop the old public preview with `npm run preview:stop`, then add `--apply`. The migration reads the latest Firestore snapshot, preserves report/file/revision/audit data, and imports existing Node scrypt password hashes into Firebase Authentication. A disposable account verifies the exact password format and is removed afterwards. The final Firestore import is atomic and checks that the source has not changed. It refuses to overwrite an existing Firebase-only workspace. The old cloud collections and local database remain available as historical backups; they are not kept in sync after cutover.
+
+## Runtime and permissions
+
+The website talks directly to Firebase Authentication and Firestore. Existing SQL scoring calculations run in an in-memory `sql.js` projection of **only the records the signed-in account may read**. Firebase is authoritative; refreshing or closing a browser does not erase data.
+
+- `cadenceProfiles/{authUid}` stores safe membership, employee settings, assignment history, leave, and reflections. Password hashes and sessions are never included. Employees can read their own profile; administrators manage membership. Signing up for Firebase Authentication alone grants no workspace access.
+- `cadenceConfig/main` stores shared roles, categories, KPI definitions, calendar settings, scoring models, and a minimal reviewer name directory.
+- `cadenceReports/{employeeId_date}` stores one report with its activities, attachment metadata, and feedback. Rules protect ownership, review fields, status transitions, revision numbers, server submission timestamps, and immutable report history. Stale transactions fail instead of overwriting another browser's changes.
+- `cadenceFiles/{fileId}/parts` stores private original files and compressed parsed rows in 256 KiB chunks. Upload and removal are atomic with report metadata. Downloads verify SHA-256 hashes and sizes. Files are delivered as browser downloads, with no public file URLs.
+- `cadenceNotifications` stores personal reminders and manager review notifications. `cadenceAudit` stores immutable, caller-attributed activity events. The Firebase console retains authentication metadata. Browser-generated audit descriptions reflect client actions; Firebase identity, timestamps, permissions, and immutable report snapshots provide the independent checks.
+
+The old server collections remain denied to all web clients. No Firebase Admin SDK credential is included in the browser bundle. The legacy ignored `.env.render-secret` is unnecessary for this static deployment.
+
+## Changes for the free plan
+
+- The site works independently of this computer. Closing a preview, sleeping the computer, or turning it off does not stop Firebase Hosting.
+- In-app reminders are calculated when a user opens the workspace or refreshes notifications. There is no unattended background scheduler or SMTP reminder delivery.
+- Administrators invite users with an initial password. Password resets use Firebase's email reset link. Login email changes require coordinated Authentication/profile maintenance; the app's edit form keeps the login email read-only.
+- CSV, XLSX, and PDF exports are generated in the browser. CSV and XLSX uploads retain parsed-row insights; other supported formats remain downloadable attachments.
+- Limits remain 5 MiB/file and 10 attachments/report. Parsed files are limited to 10,000 rows, 50 columns, 16 MiB expanded JSON, and 2 MiB compressed data. Individual report/profile/config documents have an 800 KiB safety limit.
+- Spark quotas still apply. Files and their parsed rows share Firestore's free storage quota with the reports. Quota exhaustion can temporarily interrupt service. This is an ongoing cloud deployment, with no guarantee of unlimited free usage or lifetime availability.
+
+## Archived server deployment notes
+
+The notes below describe the earlier server/tunnel implementation. They are retained for reference; the Firebase-only deployment above supersedes them.
 
 ## Current no-card route: temporary public preview
 

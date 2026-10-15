@@ -1,5 +1,7 @@
 # Implementation plan
 
+The later authorized Firebase deployment supersedes the original local-only scope below. The static Firebase version uses direct authenticated Firestore access with security rules, reuses the reporting calculations in a browser memory projection, and replaces server exports and attachment transport with browser implementations. See `DEPLOYMENT.md` for the current architecture and `QA_REPORT.md` for verification.
+
 1. Foundation: inspect empty workspace, TypeScript/React/Express, SQLite migrations, sessions, admin CLI, request validation and authorization. Validate schema and authentication.
 2. Management: custom roles/categories, employees, versioned KPI assignments and score configurations, schedules and leave. Validate employee lifecycle and isolation.
 3. Reporting: multi-activity drafts, submission, correction/review history, optimistic concurrency. Validate duplicates, working dates and transition permissions.

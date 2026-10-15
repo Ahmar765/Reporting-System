@@ -1,0 +1,10 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { resolve, delimiter } from 'node:path';
+import { spawnSync } from 'node:child_process';
+const base = resolve('.tools/java21');
+const java = existsSync(base) && readdirSync(base).map(n => resolve(base, n)).find(n => existsSync(resolve(n, 'bin/java.exe')));
+const env = { ...process.env, ...(java ? { JAVA_HOME: java, PATH: resolve(java, 'bin') + delimiter + process.env.PATH } : {}) };
+const integration = process.argv.includes('--integration') || process.argv.includes('--sdk');
+const command = process.argv.includes('--sdk') ? 'node --import tsx scripts/test-spark-integration.mjs' : integration ? 'node scripts/run-spark-checks.mjs' : 'node --test tests/spark.rules.test.mjs';
+const result = spawnSync(process.execPath, ['node_modules/firebase-tools/lib/bin/firebase.js', 'emulators:exec', '--only', integration ? 'firestore,auth' : 'firestore', '--project', 'demo-cadence', '--config', 'firebase.test.json', command], { stdio: 'inherit', env: { ...env, CI: 'true', FIREBASE_CLI_DISABLE_MOTD: '1' } });
+process.exit(result.status ?? 1);
