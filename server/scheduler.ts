@@ -2,6 +2,7 @@ import { DateTime } from './calendar.js';
 import nodemailer from 'nodemailer';
 import { all, exec, now, audit, type DB, type Row } from './db.js';
 import { settings, isWorking, deadlineAt, reportingStatus, localToday } from './domain.js';
+import { reportReminderKindsSql } from './notification-policy.js';
 let running = false;
 export async function runJobs(db: DB, instant = new Date(), options: { sendEmail?: boolean } = {}) {
   if (running) return {
@@ -18,7 +19,7 @@ export async function runJobs(db: DB, instant = new Date(), options: { sendEmail
       const r = exec(db, 'INSERT OR IGNORE INTO notifications(user_id,period,kind,title,message,created_at,email_status) VALUES(?,?,?,?,?,?,?)', user.id, period, kind, title, message, timestamp, user.email_notifications && process.env.SMTP_HOST ? 'queued' : 'not_configured');
       created += Number(r.changes);
     };
-    for (const u of all(db, 'SELECT * FROM users WHERE active=1 AND notifications=1')) {
+    for (const u of all(db, "SELECT * FROM users WHERE active=1 AND notifications=1 AND access='employee'")) {
       const date = localToday(u.timezone, instant);
       const local = DateTime.fromJSDate(instant, {
         zone: u.timezone
@@ -54,7 +55,7 @@ export async function runJobs(db: DB, instant = new Date(), options: { sendEmail
         connectionTimeout: 10000,
         socketTimeout: 10000
       });
-      for (const n of all(db, "SELECT n.*,u.email FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.email_status='queued' AND u.active=1 AND u.notifications=1 AND u.email_notifications=1 LIMIT 20")) {
+      for (const n of all(db, "SELECT n.*,u.email FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.email_status='queued' AND u.active=1 AND u.notifications=1 AND u.email_notifications=1 AND NOT (u.access='admin' AND n.kind IN (" + reportReminderKindsSql + ')) LIMIT 20')) {
         // Claim before delivery. Uncertain deliveries are not retried automatically to avoid duplicates.
         const claim = exec(db, "UPDATE notifications SET email_status='sending' WHERE id=? AND email_status='queued'", n.id);
         if (!claim.changes) continue;

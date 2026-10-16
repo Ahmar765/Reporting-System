@@ -45,3 +45,9 @@ The company database has no default account or demonstration performance data. C
 - Firebase CLI successfully compiled and released the production rules and index exclusions, then published the static site to `https://cadence-53781.web.app`.
 - Live HTTPS checks returned 200 for the homepage and calculation WASM asset, confirmed the deployed source fingerprint, and returned 403 for anonymous Firestore access. The login page was inspected in Chrome at widths 320, 768, 1024, and 1440 with no horizontal overflow. Browser logs showed only unrelated installed-extension messages. Actual company passwords were never read or entered during QA.
 
+# Administrator reminder correction — 2026-10-16
+
+- Personal due/overdue and weekly/monthly reporting reminders now apply only to employees in both the Firebase client and legacy scheduler. Older administrator reminders are filtered from the inbox and unread badge; other notifications remain visible. Legacy SMTP delivery also excludes personal reporting reminders addressed to administrators.
+- All 42 native unit/API/domain tests passed, including a regression that seeds legacy administrator reminders and verifies inbox visibility, unread counts, and continued employee reminders. TypeScript and targeted ESLint checks passed.
+- The real Firebase SDK/emulator integration passed with seeded legacy admin notifications. It verifies no new admin reminders are created, the five existing test records are preserved, only the unrelated review notification remains visible, and employee reminders continue to work.
+

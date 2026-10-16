@@ -29,6 +29,7 @@ try {
     const d = ctx.firestore();
     await setDoc(doc(d, 'cadenceConfig/main'), { ...captureConfig(native), actorUid: 'fixture', changedAt: Timestamp.now() });
     for (const u of nativeAll(native, 'SELECT * FROM users')) await setDoc(doc(d, 'cadenceProfiles', uidMap.get(u.id)), { ...captureProfile(native, u, uidMap.get(u.id)), actorUid: 'fixture', changedAt: Timestamp.now() });
+    for (const kind of ['due', 'overdue', 'weekly', 'monthly', 'review']) await setDoc(doc(d, 'cadenceNotifications', `1_fixture_${kind}`), { owner: 1, user_id: 1, period: 'fixture', kind, title: 'Fixture notification', message: 'Fixture only', created_at: new Date().toISOString(), read_at: null, email_status: 'not_configured', delivered_at: null, actorUid: 'fixture', changedAt: Timestamp.now() });
   });
   vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
   const database = await vite.ssrLoadModule('/src/firebase/database.ts');
@@ -39,7 +40,15 @@ try {
   const { loadWorkspace, commitWorkspace } = await vite.ssrLoadModule('/src/firebase/store.ts');
   await assert.rejects(api('/bootstrap'), /Please sign in/);
   await api('/auth/login', { email: 'admin@example.test', password: TEST_PASSWORD });
-  assert.equal((await api('/bootstrap')).users.length, 3);
+  const adminBootstrap = await api('/bootstrap');
+  assert.equal(adminBootstrap.users.length, 3);
+  assert.equal(adminBootstrap.unread, 1, 'Legacy admin report reminders must not inflate the unread badge.');
+  assert.deepEqual((await api('/notifications')).map(n => n.kind), ['review']);
+  assert.equal((await api('/jobs/run', {})).created, 0, 'Administrators must not generate personal report reminders.');
+  await env.withSecurityRulesDisabled(async ctx => {
+    const { getDocs, collection, query, where } = await import('firebase/firestore');
+    assert.equal((await getDocs(query(collection(ctx.firestore(), 'cadenceNotifications'), where('owner', '==', 1)))).size, 5, 'Existing admin records are preserved and no new reminders are written.');
+  });
   const fresh = { name: 'Invited Fixture', email: 'invited@example.test', employee_code: 'TEST-NEW', access: 'employee', role_id: 1, joining_date: '2026-01-01', timezone: 'Asia/Karachi', deadline: '22:00', workdays: [1, 2, 3, 4, 5], category_ids: [1], notifications: true, email_notifications: false, password: TEST_PASSWORD };
   const created = await api('/users', fresh);
   assert.equal(created.id, 4);
@@ -50,6 +59,7 @@ try {
   await api('/auth/logout', {});
   await api('/auth/login', { email: 'outreach@example.test', password: TEST_PASSWORD });
   assert.equal((await api('/bootstrap')).users.length, 1);
+  assert.ok((await api('/notifications')).some(n => ['due', 'overdue'].includes(n.kind)), 'Employees continue to receive personal reporting reminders.');
   const body = reportBody('2026-10-15', 1); body.activities[0].links = ['https://example.test/evidence'];
   const draft = await api('/reports', body);
   assert.equal(draft.status, 'draft');

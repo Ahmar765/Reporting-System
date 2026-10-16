@@ -59,6 +59,14 @@ test('authenticated reporting, management, export and audit integration', async 
   let version = 0;
   let created = 0;
   try {
+    await t.test('admin inbox and unread badge exclude legacy personal report reminders', async () => {
+      for (const kind of ['due', 'overdue', 'weekly', 'monthly', 'review']) exec(db, 'INSERT INTO notifications(user_id,period,kind,title,message,created_at) VALUES(?,?,?,?,?,?)', 1, 'fixture-admin', kind, 'Fixture notification', 'Fixture only', new Date().toISOString());
+      exec(db, 'INSERT INTO notifications(user_id,period,kind,title,message,created_at) VALUES(?,?,?,?,?,?)', 2, 'fixture-employee', 'due', 'Fixture employee reminder', 'Fixture only', new Date().toISOString());
+      const inbox = await request('/notifications', admin);
+      assert.deepEqual(inbox.data.map((n: Record<string, string>) => n.kind), ['review']);
+      assert.equal((await request('/bootstrap', admin)).data.unread, 1);
+      assert.equal((await request('/notifications', employee)).data.some((n: Record<string, string>) => n.kind === 'due'), true);
+    });
     await t.test('anonymous requests and incorrect credentials are rejected', async () => {
       assert.equal((await request('/bootstrap')).status, 401);
       assert.equal((await request('/auth/login', undefined, {

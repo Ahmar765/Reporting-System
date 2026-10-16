@@ -175,11 +175,12 @@ test('notifications respect deadlines, leave, future days, account state and ded
     await runJobs(db, new Date('2026-10-15T16:20:00Z'));
     assert.equal(all(db, 'SELECT * FROM notifications').length, 0);
     await runJobs(db, new Date('2026-10-15T16:35:00Z'));
-    assert.equal(all(db, "SELECT * FROM notifications WHERE kind='due'").length, 2);
+    assert.equal(all(db, "SELECT * FROM notifications WHERE kind='due'").length, 1);
     await runJobs(db, new Date('2026-10-15T16:40:00Z'));
-    assert.equal(all(db, "SELECT * FROM notifications WHERE kind='due'").length, 2);
+    assert.equal(all(db, "SELECT * FROM notifications WHERE kind='due'").length, 1);
     await runJobs(db, new Date('2026-10-15T17:01:00Z'));
-    assert.equal(all(db, "SELECT * FROM notifications WHERE kind='overdue'").length, 2);
+    assert.equal(all(db, "SELECT * FROM notifications WHERE kind='overdue'").length, 1);
+    assert.equal(all(db, 'SELECT * FROM notifications WHERE user_id=1').length, 0, 'Administrators do not submit personal reports.');
     assert.equal(all(db, 'SELECT * FROM notifications WHERE user_id=3').length, 0);
     assert.equal(all(db, 'SELECT * FROM notifications WHERE delivered_at IS NOT NULL').length, 0);
     exec(db, 'UPDATE users SET active=0 WHERE id=2');

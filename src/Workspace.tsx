@@ -74,11 +74,12 @@ export function Settings({
             })} /></Field></div><p className="notice">{firebaseMode ? 'Reminders appear when you open the workspace or refresh your inbox. Each profile keeps its own deadline and timezone. Background and email reminders are unavailable on this free deployment.' : 'The scheduler runs every minute while the server is running. Each profile has its own daily deadline and timezone. Email requires SMTP environment configuration; delivery status is visible in notifications.'}</p><div className="inline"><button className="primary">Save reporting settings</button><button type="button" onClick={async () => {
             try {
               const r = await api('/jobs/run', {});
-              toast(r.created + ' new notifications generated.');
+              if (firebaseMode) await refresh();
+              toast(firebaseMode ? 'Notifications refreshed.' : r.created + ' new notifications generated.');
             } catch (e) {
               setError((e as Error).message);
             }
-          }}>{firebaseMode ? 'Refresh my reminders' : 'Run reminders now'}</button></div></form><div className="dashboard-grid"><form className="panel" onSubmit={e => {
+          }}>{firebaseMode ? 'Refresh notifications' : 'Run reminders now'}</button></div></form><div className="dashboard-grid"><form className="panel" onSubmit={e => {
           e.preventDefault();
           void submit('/holidays', holiday);
         }}><h2>Company holidays</h2><Field label="Holiday date"><input required type="date" value={holiday.date} onChange={e => setHoliday({

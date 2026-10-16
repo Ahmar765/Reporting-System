@@ -2,6 +2,7 @@
 import { z } from 'zod/v4';
 import { DateTime } from '../../server/calendar';
 import { settings, localToday, isWorking, summary, days, reportingStatus } from '../../server/domain';
+import { notificationSqlFilter } from '../../server/notification-policy';
 import { date, id, profile, reportInput, assignmentInput, scoreInput, clock, zone, text } from '../../server/validation';
 import { all, one, exec, now, transaction, audit, type DB } from './database';
 import type { Row } from '../../shared/query';
@@ -59,7 +60,7 @@ export function registerReportingRoutes(app: ClientRouter, db: DB) {
       holidays: all(db, 'SELECT * FROM holidays ORDER BY date'),
       leave: req.user.access === 'admin' ? all(db, 'SELECT * FROM leave_days ORDER BY start_date') : all(db, 'SELECT * FROM leave_days WHERE user_id=?', req.user.id),
       scoring: req.user.access === 'admin' ? all(db, 'SELECT * FROM scoring_configs ORDER BY id DESC') : [],
-      unread: one(db, 'SELECT count(*) AS n FROM notifications WHERE user_id=? AND read_at IS NULL', req.user.id)!.n
+      unread: one(db, 'SELECT count(*) AS n FROM notifications WHERE user_id=? AND read_at IS NULL' + notificationSqlFilter(req.user.access), req.user.id)!.n
     });
   });
   app.post('/api/users', async (req, res) => {
@@ -531,7 +532,7 @@ export function registerReportingRoutes(app: ClientRouter, db: DB) {
       ok: true
     });
   });
-  app.get('/api/notifications', (req, res) => res.json(all(db, 'SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 200', req.user.id)));
+  app.get('/api/notifications', (req, res) => res.json(all(db, 'SELECT * FROM notifications WHERE user_id=?' + notificationSqlFilter(req.user.access) + ' ORDER BY id DESC LIMIT 200', req.user.id)));
   app.post('/api/notifications/read', (req, res) => {
     exec(db, 'UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL', now(), req.user.id);
     res.json({

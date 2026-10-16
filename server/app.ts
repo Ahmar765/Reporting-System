@@ -11,6 +11,7 @@ import { date, id, profile, reportInput, assignmentInput, scoreInput, clock, zon
 import { settings, localToday, isWorking, summary, days, reportingStatus } from './domain.js';
 import { runJobs } from './scheduler.js';
 import { download } from './exports.js';
+import { notificationSqlFilter } from './notification-policy.js';
 declare module 'express-serve-static-core' {
   interface Request {
     user: Row;
@@ -185,7 +186,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       holidays: all(db, 'SELECT * FROM holidays ORDER BY date'),
       leave: req.user.access === 'admin' ? all(db, 'SELECT * FROM leave_days ORDER BY start_date') : all(db, 'SELECT * FROM leave_days WHERE user_id=?', req.user.id),
       scoring: req.user.access === 'admin' ? all(db, 'SELECT * FROM scoring_configs ORDER BY id DESC') : [],
-      unread: one(db, 'SELECT count(*) AS n FROM notifications WHERE user_id=? AND read_at IS NULL', req.user.id)!.n
+      unread: one(db, 'SELECT count(*) AS n FROM notifications WHERE user_id=? AND read_at IS NULL' + notificationSqlFilter(req.user.access), req.user.id)!.n
     });
   });
   app.post('/api/users', async (req, res) => {
@@ -767,7 +768,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       ok: true
     });
   });
-  app.get('/api/notifications', (req, res) => res.json(all(db, 'SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 200', req.user.id)));
+  app.get('/api/notifications', (req, res) => res.json(all(db, 'SELECT * FROM notifications WHERE user_id=?' + notificationSqlFilter(req.user.access) + ' ORDER BY id DESC LIMIT 200', req.user.id)));
   app.post('/api/notifications/read', (req, res) => {
     exec(db, 'UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL', now(), req.user.id);
     res.json({

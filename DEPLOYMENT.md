@@ -34,7 +34,7 @@ The old server collections remain denied to all web clients. No Firebase Admin S
 ## Changes for the free plan
 
 - The site works independently of this computer. Closing a preview, sleeping the computer, or turning it off does not stop Firebase Hosting.
-- In-app reminders are calculated when a user opens the workspace or refreshes notifications. There is no unattended background scheduler or SMTP reminder delivery.
+- Personal daily/weekly/monthly reporting reminders apply to employee accounts. Administrators do not receive these reminders, and old personal report reminders are excluded from their inbox and unread count. Other notifications remain visible. In-app reminders are calculated when an employee opens the workspace or refreshes notifications. There is no unattended background scheduler or SMTP reminder delivery.
 - Administrators invite users with an initial password. Password resets use Firebase's email reset link. Login email changes require coordinated Authentication/profile maintenance; the app's edit form keeps the login email read-only.
 - CSV, XLSX, and PDF exports are generated in the browser. CSV and XLSX uploads retain parsed-row insights; other supported formats remain downloadable attachments.
 - Limits remain 5 MiB/file and 10 attachments/report. Parsed files are limited to 10,000 rows, 50 columns, 16 MiB expanded JSON, and 2 MiB compressed data. Individual report/profile/config documents have an 800 KiB safety limit.

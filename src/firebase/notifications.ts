@@ -4,15 +4,16 @@ import { all, insertRows, type DB } from './database';
 import { DateTime } from '../../server/calendar';
 import { localToday, settings, isWorking, deadlineAt, reportingStatus } from '../../server/domain';
 import type { Row } from '../../shared/query';
+import { visibleNotification } from '../../server/notification-policy';
 export async function notificationsFor(db: DB, user: Row, generate = false) {
   const snapshot = await getDocsFromServer(query(collection(firestore, 'cadenceNotifications'), where('owner', '==', user.id)));
-  const stored = snapshot.docs.map((d, i) => ({ ...d.data(), id: i + 1, key: d.id, read_at: d.get('read_at')?.toDate?.().toISOString() || d.get('read_at') || null } as Row));
+  const stored = snapshot.docs.map((d, i) => ({ ...d.data(), id: i + 1, key: d.id, read_at: d.get('read_at')?.toDate?.().toISOString() || d.get('read_at') || null } as Row)).filter(n => visibleNotification(user.access, n.kind));
   const candidates: Row[] = [];
   const notify = (period: string, kind: string, title: string, message: string) => {
     const key = `${user.id}_${encodeURIComponent(period)}_${kind}`;
     if (!stored.some(n => n.key === key)) candidates.push({ key, owner: user.id, user_id: user.id, period, kind, title, message, created_at: new Date().toISOString(), read_at: null, email_status: 'unavailable_on_free_plan', delivered_at: null, actorUid: auth.currentUser!.uid });
   };
-  if (generate && user.notifications) {
+  if (generate && user.access === 'employee' && user.notifications) {
     const config = settings(db), instant = new Date(), date = localToday(user.timezone), local = DateTime.fromJSDate(instant, { zone: user.timezone });
     for (let offset = 0; offset <= 31; offset++) {
       const d = local.minus({ days: offset }).toISODate()!;
