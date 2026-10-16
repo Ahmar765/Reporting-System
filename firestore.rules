@@ -14,8 +14,9 @@ service cloud.firestore {
     function validProfile(d, uid) {
       return d.keys().hasOnly(['revision','uid','row','category_ids','tables','actorUid','changedAt'])
         && d.uid == uid && d.row.id is int && d.row.id > 0 && d.row.id < 90000000
-        && d.row.keys().hasOnly(['id','email','name','employee_code','access','role_id','active','joining_date','timezone','workdays','deadline','notifications','email_notifications','created_at'])
+        && d.row.keys().hasOnly(['id','email','name','employee_code','access','role_id','active','joining_date','timezone','workdays','deadline','notifications','email_notifications','created_at','deleted_at'])
         && d.row.access in ['admin','employee'] && d.row.active in [0,1]
+        && (d.row.get('deleted_at', null) == null || d.row.deleted_at is string && d.row.active == 0 && d.row.access == 'employee')
         && d.category_ids is list && d.category_ids.size() <= 100
         && d.tables.keys().hasOnly(['assignments','leave_days','profile_versions','reflections','overrides']);
     }
@@ -23,12 +24,18 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || admin());
       allow list: if admin();
       allow create: if admin() && validProfile(request.resource.data, uid) && request.resource.data.revision == 0 && stamp(request.resource.data)
+        && request.resource.data.row.get('deleted_at', null) == null
         && request.resource.data.tables.assignments.size() == 0;
       allow update: if active() && validProfile(request.resource.data, uid) && stamp(request.resource.data)
         && request.resource.data.revision == resource.data.revision + 1
         && request.resource.data.row.id == resource.data.row.id
         && request.resource.data.row.email == resource.data.row.email
         && request.resource.data.tables.assignments == resource.data.tables.assignments
+        && resource.data.row.get('deleted_at', null) == null
+        && (request.resource.data.row.get('deleted_at', null) == null
+          || admin() && uid != request.auth.uid && resource.data.row.access == 'employee'
+            && request.resource.data.row.diff(resource.data.row).affectedKeys().hasOnly(['deleted_at','active','notifications','email_notifications'])
+            && request.resource.data.category_ids == resource.data.category_ids && request.resource.data.tables == resource.data.tables)
         && (admin() && (uid != request.auth.uid || request.resource.data.row.access == 'admin' && request.resource.data.row.active == 1)
           || uid == request.auth.uid && request.resource.data.row == resource.data.row
             && request.resource.data.category_ids == resource.data.category_ids

@@ -7,7 +7,7 @@ export type SparkProfile = { revision: number; uid: string; row: Row; category_i
 export type SparkReport = { revision: number; owner: number; ownerUid: string; report: Row; activities: Row[]; files: Record<string, Row>; feedback: Row[] };
 export const reportKey = (r: Row) => `${r.user_id}_${r.date}`;
 export function safeUser(row: Row) {
-  return Object.fromEntries(Object.entries(row).filter(([key]) => !['password_hash', 'role_name', 'csrf', 'token_hash', 'expires_at'].includes(key)));
+  return Object.fromEntries(Object.entries(row).filter(([key, value]) => !['password_hash', 'role_name', 'csrf', 'token_hash', 'expires_at'].includes(key) && (key !== 'deleted_at' || value !== null)));
 }
 export function captureConfig(db: ReadDB, revision = 0): SparkConfig {
   return { revision, tables: Object.fromEntries(CONFIG_TABLES.map(t => [t, all(db, `SELECT * FROM ${t} ORDER BY id`)])), reviewers: all(db, "SELECT id,name,role_id FROM users WHERE access='admin' ORDER BY id") };

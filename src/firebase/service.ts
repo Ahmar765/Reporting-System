@@ -83,8 +83,9 @@ export async function firebaseApi(path: string, body?: any, method = body === un
       }
       if (/^\/users\/\d+\/password$/.test(path)) {
         if (user.access !== 'admin') throw Error('Administrator access required.');
-        const target = one(db, 'SELECT email FROM users WHERE id=?', Number(path.split('/')[2]));
+        const target = one(db, 'SELECT email,deleted_at FROM users WHERE id=?', Number(path.split('/')[2]));
         if (!target) throw Error('Employee not found.');
+        if (target.deleted_at) throw Error('This employee has been deleted from the team.');
         await sendPasswordResetEmail(auth, target.email); return { ok: true };
       }
       if (method === 'PUT' && /^\/users\/\d+$/.test(path)) {

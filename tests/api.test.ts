@@ -372,6 +372,32 @@ test('authenticated reporting, management, export and audit integration', async 
       })).status, 403);
       assert.deepEqual(all(db, 'SELECT * FROM kpis'), before);
     });
+    await t.test('employee deletion removes workspace access, preserves reports, and protects administrators', async () => {
+      assert.equal((await request('/users/3', employee, {}, 'DELETE')).status, 403);
+      assert.equal((await request('/users/1', admin, {}, 'DELETE')).status, 403);
+      const before = one(db, 'SELECT * FROM users WHERE id=3')!;
+      const retainedReport = Number(exec(db, "INSERT INTO reports(user_id,date,status,created_at,updated_at) VALUES(3,?,'draft',?,?)", date, new Date().toISOString(), new Date().toISOString()).lastInsertRowid);
+      assert.equal((await request('/users/3', admin, {}, 'DELETE')).status, 200);
+      assert.equal((await request('/bootstrap', other)).status, 401);
+      assert.equal((await request('/auth/login', undefined, { email: before.email, password: TEST_PASSWORD })).status, 401);
+      assert.ok(one(db, 'SELECT deleted_at FROM users WHERE id=3')!.deleted_at);
+      assert.equal(one(db, 'SELECT active FROM users WHERE id=3')!.active, 0);
+      assert.equal((await request('/reports/' + retainedReport, admin)).status, 200);
+      assert.equal((await request('/bootstrap', admin)).data.users.filter((u: { deleted_at: string | null }) => !u.deleted_at).some((u: { id: number }) => u.id === 3), false);
+      assert.equal((await request('/users/3/status', admin, { active: true })).status, 409);
+      assert.equal((await request('/users/3', admin, { ...before, workdays: JSON.parse(before.workdays), category_ids: [7] }, 'PUT')).status, 409);
+      assert.equal((await request('/users/3/password', admin, { password: TEST_PASSWORD })).status, 409);
+      assert.ok(one(db, "SELECT * FROM audit_logs WHERE action='employee.deleted' AND entity_id='3'"));
+    });
+    await t.test('separate administrator credentials survive the primary administrator password change', async () => {
+      const created = await request('/users', admin, { name: 'Fixture Backup Admin', email: 'backup@example.test', employee_code: 'TEST-BACKUP-ADMIN', role_id: 1, access: 'admin', joining_date: date, timezone: 'Asia/Karachi', workdays: [1, 2, 3, 4, 5], deadline: '22:00', notifications: true, email_notifications: false, category_ids: [], password: TEST_PASSWORD });
+      assert.equal(created.status, 201);
+      assert.equal((await request('/auth/password', admin, { current: TEST_PASSWORD, password: 'Fixture-Changed-Passphrase!26' })).status, 200);
+      const backup = await login('backup@example.test');
+      assert.equal((await request('/bootstrap', backup)).data.user.access, 'admin');
+      assert.equal((await request('/users/1', backup, {}, 'DELETE')).status, 403);
+      assert.equal((await request('/users/' + created.data.id, backup, {}, 'DELETE')).status, 403);
+    });
     await t.test('logout invalidates session', async () => {
       assert.equal((await request('/auth/logout', employee, {})).status, 200);
       assert.equal((await request('/bootstrap', employee)).status, 401);

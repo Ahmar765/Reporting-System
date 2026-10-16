@@ -94,6 +94,7 @@ export function registerReportingRoutes(app: ClientRouter, db: DB) {
     admin(req);
     const uid = id.parse(req.params.id);
     const before = getUser(uid);
+    if (before.deleted_at) fail(409, 'This employee has been deleted from the team.');
     const b = profile.parse(req.body);
     if (uid === req.user.id && b.access !== 'admin') fail(400, 'You cannot remove your own administrator access.');
     transaction(db, () => {
@@ -119,7 +120,7 @@ export function registerReportingRoutes(app: ClientRouter, db: DB) {
   app.post('/api/users/:id/status', (req, res) => {
     admin(req);
     const uid = id.parse(req.params.id);
-    getUser(uid);
+    if (getUser(uid).deleted_at) fail(409, 'Deleted employees cannot be reactivated from Team members.');
     const b = z.object({
       active: z.boolean()
     }).parse(req.body);
@@ -132,6 +133,19 @@ export function registerReportingRoutes(app: ClientRouter, db: DB) {
     res.json({
       ok: true
     });
+  });
+  app.delete('/api/users/:id', (req, res) => {
+    admin(req);
+    const uid = id.parse(req.params.id);
+    const before = getUser(uid);
+    if (uid === req.user.id || before.access !== 'employee') fail(403, 'Only employee accounts can be deleted. Administrator accounts are protected.');
+    if (before.deleted_at) fail(409, 'This employee has already been deleted.');
+    transaction(db, () => {
+      exec(db, 'UPDATE users SET active=0,notifications=0,email_notifications=0,deleted_at=? WHERE id=?', now(), uid);
+      exec(db, 'DELETE FROM sessions WHERE user_id=?', uid);
+      audit(db, req.user.id, 'employee.deleted', 'user', uid, publicUser(before), publicUser(getUser(uid)));
+    });
+    res.json({ ok: true, deleted: true });
   });
   for (const table of ['roles', 'categories'] as const) app.post('/api/' + table, (req, res) => {
     admin(req);

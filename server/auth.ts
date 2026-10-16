@@ -25,7 +25,7 @@ export function createSession(db: DB, userId: number) {
   };
 }
 export function publicUser(user: Record<string, any>) {
-  const keys = ['id', 'email', 'name', 'employee_code', 'access', 'role_id', 'role_name', 'active', 'joining_date', 'timezone', 'deadline', 'notifications', 'email_notifications', 'created_at'];
+  const keys = ['id', 'email', 'name', 'employee_code', 'access', 'role_id', 'role_name', 'active', 'joining_date', 'timezone', 'deadline', 'notifications', 'email_notifications', 'created_at', 'deleted_at'];
   const safe = Object.fromEntries(keys.map(k => [k, user[k]]));
   return {
     ...safe,

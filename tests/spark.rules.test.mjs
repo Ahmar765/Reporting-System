@@ -113,3 +113,15 @@ test('admins cannot create or modify employee targets, KPIs, or scoring models d
   for (const table of ['kpis', 'scoring_configs']) await assertFails(updateDoc(doc(d, 'cadenceConfig/main'), { ['tables.' + table]: [{ id: 1 }], revision: 1, actorUid: 'admin', changedAt: serverTimestamp() }));
   await assertSucceeds(updateDoc(doc(d, 'cadenceConfig/main'), { 'tables.roles': [], revision: 1, actorUid: 'admin', changedAt: serverTimestamp() }));
 });
+test('employee removal revokes stale sessions, keeps history readable by admins, and cannot be undone by web clients', async () => {
+  const adminDb = db('admin'), ref = doc(adminDb, 'cadenceProfiles/employee');
+  await assertFails(updateDoc(doc(db(), 'cadenceProfiles/employee'), { 'row.deleted_at': '2026-10-16T12:00:00Z', 'row.active': 0, revision: 1, actorUid: 'employee', changedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(adminDb, 'cadenceProfiles/admin'), { 'row.deleted_at': '2026-10-16T12:00:00Z', 'row.active': 0, revision: 1, actorUid: 'admin', changedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { 'row.deleted_at': '2026-10-16T12:00:00Z', 'row.active': 0, 'row.name': 'Cannot erase attribution', revision: 1, actorUid: 'admin', changedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(ref, { 'row.deleted_at': '2026-10-16T12:00:00Z', 'row.active': 0, 'row.notifications': 0, 'row.email_notifications': 0, revision: 1, actorUid: 'admin', changedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(db(), 'cadenceConfig/main')));
+  await assertFails(getDoc(doc(db(), 'cadenceReports/2_2026-10-15')));
+  await assertSucceeds(getDoc(doc(adminDb, 'cadenceReports/2_2026-10-15')));
+  await assertFails(updateDoc(ref, { 'row.deleted_at': null, 'row.active': 1, revision: 2, actorUid: 'admin', changedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(ref));
+});

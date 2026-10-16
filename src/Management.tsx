@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Users, Target, Pencil, ShieldCheck } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Plus, Users, Target, Pencil, ShieldCheck, Trash2 } from 'lucide-react';
 import { api, firebaseMode, localDate, number, type Row } from './api';
 import { Field, Badge, Empty } from './components';
 type Props = {
@@ -33,6 +33,24 @@ export function Team({
   const [search, setSearch] = useState('');
   const [custom, setCustom] = useState('');
   const [reset, setReset] = useState<Row | null>(null);
+  const [deleting, setDeleting] = useState<Row | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+  const deleteConfirmation = useRef<HTMLElement>(null);
+  useEffect(() => { if (deleting) deleteConfirmation.current?.focus(); }, [deleting]);
+  const deleteEmployee = async () => {
+    if (!deleting || deletingBusy) return;
+    setDeletingBusy(true);
+    setError('');
+    try {
+      await api('/users/' + deleting.id, {}, 'DELETE');
+      if (form?.id === deleting.id) setForm(null);
+      if (reset?.id === deleting.id) setReset(null);
+      setDeleting(null);
+      await refresh();
+      toast('Employee deleted from the team. Past reports and files are preserved.');
+    } catch (err) { setError((err as Error).message); }
+    finally { setDeletingBusy(false); }
+  };
   const set = (patch: Row) => setForm(f => ({
     ...f,
     ...patch
@@ -82,6 +100,7 @@ export function Team({
           })} />In-app reminders</label><label><input type="checkbox" disabled={firebaseMode} checked={!firebaseMode && !!form.email_notifications} onChange={e => set({
             email_notifications: e.target.checked
           })} />{firebaseMode ? 'Email reminders unavailable on this free deployment' : 'Email reminders when SMTP is configured'}</label></div><button disabled={busy} className="primary">{busy ? 'Saving…' : 'Save employee'}</button></form>}
+ {deleting && <section className="panel" aria-label="Confirm employee deletion" ref={deleteConfirmation} tabIndex={-1}><h2>Delete {deleting.name}?</h2><p>This removes {deleting.name} from Team members and blocks their workspace access. Their past reports, uploaded files, and audit history will remain available to administrators.</p><p className="muted small">Account: {deleting.email}</p><div className="inline"><button type="button" className="secondary" disabled={deletingBusy} onClick={() => setDeleting(null)}>Cancel deletion</button><button type="button" className="primary" disabled={deletingBusy} onClick={() => void deleteEmployee()}><Trash2 size={16} />{deletingBusy ? 'Deleting…' : 'Delete employee'}</button></div></section>}
  {reset && <form className="panel" onSubmit={async e => {
       e.preventDefault();
       try {
@@ -97,7 +116,7 @@ export function Team({
           ...reset,
           password: e.target.value
         })} /></Field>}<div className="inline"><button className="primary">{firebaseMode ? 'Send reset email' : 'Reset password'}</button><button type="button" onClick={() => setReset(null)}>Cancel</button></div></form>}
- <section className="panel"><div className="panel-heading"><h2><Users size={18} />Team members</h2><input type="search" aria-label="Search employees" placeholder="Search name, role or email…" value={search} onChange={e => setSearch(e.target.value)} /></div><div className="table-scroll"><table><thead><tr><th>Employee</th><th>Role / access</th><th>Schedule</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.users.filter((u: Row) => (u.name + ' ' + u.role_name + ' ' + u.email).toLowerCase().includes(search.toLowerCase())).map((u: Row) => <tr key={u.id}><td><strong>{u.name}</strong><small>{u.email} · {u.employee_code}</small></td><td>{u.role_name}<small>{u.access}</small></td><td>{u.deadline}<small>{u.timezone}</small></td><td><Badge status={u.active ? 'active' : 'inactive'} /></td><td><div className="inline"><button className="icon-button" aria-label={'Edit ' + u.name} onClick={() => {
+ <section className="panel"><div className="panel-heading"><h2><Users size={18} />Team members</h2><input type="search" aria-label="Search employees" placeholder="Search name, role or email…" value={search} onChange={e => setSearch(e.target.value)} /></div><div className="table-scroll"><table><thead><tr><th>Employee</th><th>Role / access</th><th>Schedule</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.users.filter((u: Row) => !u.deleted_at && (u.name + ' ' + u.role_name + ' ' + u.email).toLowerCase().includes(search.toLowerCase())).map((u: Row) => <tr key={u.id}><td><strong>{u.name}</strong><small>{u.email} · {u.employee_code}</small></td><td>{u.role_name}<small>{u.access}</small></td><td>{u.deadline}<small>{u.timezone}</small></td><td><Badge status={u.active ? 'active' : 'inactive'} /></td><td><div className="inline"><button className="icon-button" aria-label={'Edit ' + u.name} onClick={() => {
                     setForm({
                       ...u,
                       notifications: !!u.notifications,
@@ -119,7 +138,7 @@ export function Team({
                     } catch (err) {
                       setError((err as Error).message);
                     }
-                  }}>{u.active ? 'Deactivate' : 'Activate'}</button>}</div></td></tr>)}</tbody></table></div></section><form className="panel" onSubmit={async e => {
+                  }}>{u.active ? 'Deactivate' : 'Activate'}</button>}{u.access === 'employee' && u.id !== data.user.id && <button type="button" className="text-button" disabled={deletingBusy} aria-label={'Delete employee ' + u.name} onClick={() => { setDeleting(u); setError(''); }}><Trash2 size={14} />Delete</button>}</div></td></tr>)}</tbody></table></div></section><form className="panel" onSubmit={async e => {
       e.preventDefault();
       try {
         await api('/roles', {

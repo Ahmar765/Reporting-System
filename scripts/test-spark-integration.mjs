@@ -129,8 +129,26 @@ try {
   assert.equal((await api('/notifications')).some(n => n.kind === 'review'), true);
   await api('/notifications/read', {});
   assert.equal((await api('/bootstrap')).unread, 0);
-  console.log('PASS: Firebase login, membership, invitation, reporting, private CSV upload/download, parsed rows, submission/history, CSV/XLSX/PDF exports, correction, cross-user isolation, concurrent write protection, and notifications.');
   await api('/auth/logout', {});
+  await api('/auth/login', { email: 'admin@example.test', password: TEST_PASSWORD });
+  const backup = { ...fresh, name: 'Fixture Backup Administrator', email: 'backup@example.test', employee_code: 'TEST-BACKUP', access: 'admin', category_ids: [] };
+  await api('/users', backup);
+  await api('/auth/password', { current: TEST_PASSWORD, password: 'Fixture-Changed-Passphrase!26' });
+  await api('/auth/login', { email: backup.email, password: TEST_PASSWORD });
+  assert.equal((await api('/bootstrap')).user.access, 'admin', 'The backup account must survive the primary administrator password change.');
+  await assert.rejects(api('/users/1', {}, 'DELETE'), /Administrator accounts are protected/);
+  await api('/users/2', {}, 'DELETE');
+  const deleted = (await api('/bootstrap')).users.find(user => user.id === 2);
+  assert.equal(deleted.active, 0); assert.ok(deleted.deleted_at);
+  assert.equal((await api(`/reports/${draft.id}`)).status, 'corrected');
+  assert.equal((await readFile(attached.file.id, 'bytes')).bytes.length, csv.size);
+  await assert.rejects(api('/users/2/status', { active: true }), /cannot be reactivated/);
+  await api('/auth/logout', {});
+  await assert.rejects(api('/auth/login', { email: 'outreach@example.test', password: TEST_PASSWORD }), /workspace account is unavailable/);
+  await api('/auth/login', { email: backup.email, password: TEST_PASSWORD });
+  assert.equal((await api('/auth/me')).user.access, 'admin');
+  await api('/auth/logout', {});
+  console.log('PASS: Firebase authentication, independent backup admin credentials, employee deletion and access revocation, retained reports/files, invitation, reporting, file integrity, immutable history, exports, isolation, concurrent writes, and notifications.');
 } finally {
   if (vite) {
     const config = await vite.ssrLoadModule('/src/firebase/config.ts');

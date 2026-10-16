@@ -7,6 +7,7 @@ export class ClientRouter {
   get(path: string, handler: Handler) { this.routes.push({ method: 'GET', path, handler }); }
   post(path: string, handler: Handler) { this.routes.push({ method: 'POST', path, handler }); }
   put(path: string, handler: Handler) { this.routes.push({ method: 'PUT', path, handler }); }
+  delete(path: string, handler: Handler) { this.routes.push({ method: 'DELETE', path, handler }); }
   async invoke(path: string, method: string, user: Row, body?: unknown) {
     const url = new URL('/api' + path, 'https://cadence.local');
     for (const route of this.routes) {
@@ -23,6 +24,6 @@ export class ClientRouter {
 }
 export function fail(_status: number, message: string): never { throw Error(message); }
 export function publicUser(user: Row) {
-  const keys = ['id', 'email', 'name', 'employee_code', 'access', 'role_id', 'role_name', 'active', 'joining_date', 'timezone', 'deadline', 'notifications', 'email_notifications', 'created_at'];
+  const keys = ['id', 'email', 'name', 'employee_code', 'access', 'role_id', 'role_name', 'active', 'joining_date', 'timezone', 'deadline', 'notifications', 'email_notifications', 'created_at', 'deleted_at'];
   return { ...Object.fromEntries(keys.map(k => [k, user[k]])), workdays: typeof user.workdays === 'string' ? JSON.parse(user.workdays) : user.workdays };
 }
