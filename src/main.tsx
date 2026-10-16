@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { LayoutDashboard, FileText, Users, Target, Download, Bell, Settings2, ShieldCheck, LogOut, Menu, Plus, ChevronRight, ArrowRight, Leaf, CalendarDays, FileSpreadsheet, X } from 'lucide-react';
+import { LayoutDashboard, FileText, Users, Download, Bell, Settings2, ShieldCheck, LogOut, Menu, Plus, ChevronRight, ArrowRight, Leaf, CalendarDays, FileSpreadsheet, X } from 'lucide-react';
 import { api, localDate, type Row } from './api';
 import { Field } from './components';
 import Dashboard from './Dashboard';
 import UploadedInsights from './UploadedInsights';
 import ReportEditor from './ReportEditor';
 import Reports from './Reports';
-import { Team, Targets } from './Management';
+import { Team } from './Management';
 import { Settings, Exports, Notifications, Audit } from './Workspace';
 import './styles.css';
 function Login({
@@ -130,10 +130,6 @@ function App() {
     label: 'Team members',
     icon: Users
   }, {
-    id: 'targets',
-    label: 'Targets & KPIs',
-    icon: Target
-  }, {
     id: 'uploads',
     label: 'Uploaded files',
     icon: FileSpreadsheet
@@ -215,7 +211,7 @@ function App() {
  {(page === 'dashboard' || page === 'summaries') && <Dashboard key={page} data={data} filters={filters} onSelect={id => setFilters({
           ...filters,
           user: String(id)
-        })} toast={toast} />}{page === 'reports' && <Reports filters={filters} onOpen={id => navigate('editor', id)} onCreate={() => navigate('editor')} canCreate={!admin} />}{page === 'editor' && <ReportEditor key={reportId || 'new'} data={data} reportId={reportId} onBack={() => navigate('reports')} onDirty={setDirty} toast={toast} />}{page === 'team' && admin && <Team data={data} refresh={refresh} toast={toast} />}{page === 'targets' && admin && <Targets data={data} refresh={refresh} toast={toast} />}{page === 'uploads' && admin && <UploadedInsights data={data} filters={filters} />}{page === 'settings' && <Settings data={data} refresh={refresh} toast={toast} />}{page === 'exports' && <Exports filters={filters} />}{page === 'notifications' && <Notifications data={data} refresh={refresh} toast={toast} />}{page === 'audit' && admin && <Audit />}<footer className="page-footer"><span>Cadence · BD Team Reporting</span><span>Every metric has context. Every person has a role.</span></footer></main></div>{message && <div className="toast" role="status">{message}<button aria-label="Dismiss notification" onClick={() => setMessage('')}><X size={16} /></button></div>}</div>;
+        })} toast={toast} />}{page === 'reports' && <Reports filters={filters} onOpen={id => navigate('editor', id)} onCreate={() => navigate('editor')} canCreate={!admin} />}{page === 'editor' && <ReportEditor key={reportId || 'new'} data={data} reportId={reportId} onBack={() => navigate('reports')} onDirty={setDirty} toast={toast} />}{page === 'team' && admin && <Team data={data} refresh={refresh} toast={toast} />}{page === 'uploads' && admin && <UploadedInsights data={data} filters={filters} />}{page === 'settings' && <Settings data={data} refresh={refresh} toast={toast} />}{page === 'exports' && <Exports filters={filters} />}{page === 'notifications' && <Notifications data={data} refresh={refresh} toast={toast} />}{page === 'audit' && admin && <Audit />}<footer className="page-footer"><span>Cadence · BD Team Reporting</span><span>Every metric has context. Every person has a role.</span></footer></main></div>{message && <div className="toast" role="status">{message}<button aria-label="Dismiss notification" onClick={() => setMessage('')}><X size={16} /></button></div>}</div>;
 }
 class ErrorBoundary extends React.Component<{
   children: React.ReactNode;

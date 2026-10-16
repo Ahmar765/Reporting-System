@@ -7,6 +7,7 @@ import { all, one, exec, audit, now, insertRows } from './database';
 import { commitWorkspace, type Loaded } from './store';
 import { reportKey } from '../../shared/spark-data';
 import type { Row } from '../../shared/query';
+import { canChangeReport } from '../../server/report-edit-policy';
 const CHUNK = 256 * 1024;
 const mimeByExt: Record<string, string> = { csv: 'text/csv', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf', txt: 'text/plain', ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', ods: 'application/vnd.oasis.opendocument.spreadsheet' };
 export const sha256 = async (bytes: Uint8Array) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -17,7 +18,7 @@ export async function uploadFile(loaded: Loaded, id: number, file: File) {
   const { db, user } = loaded;
   const report = one(db, 'SELECT * FROM reports WHERE id=?', id);
   if (!report || user.access !== 'admin' && report.user_id !== user.id) throw Error('Report not found.');
-  if (!['draft', 'correction_requested'].includes(report.status)) throw Error('Attachments are locked after submission. Request a correction first.');
+  if (!canChangeReport(report as { status: string })) throw Error('Open the report’s one-time edit before changing attachments.');
   if (all(db, 'SELECT id FROM report_files WHERE report_id=?', id).length >= 10) throw Error('A report can contain up to 10 attached files.');
   if (!file.size || file.size > 5 * 1024 * 1024) throw Error('Choose a non-empty file up to 5 MB.');
   const name = file.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(-255);
@@ -71,7 +72,7 @@ export async function removeFile(loaded: Loaded, id: string) {
   const f = one(loaded.db, 'SELECT * FROM report_files WHERE id=?', id);
   if (!f || loaded.user.access !== 'admin' && f.user_id !== loaded.user.id) throw Error('File not found.');
   const r = one(loaded.db, 'SELECT * FROM reports WHERE id=?', f.report_id)!;
-  if (!['draft', 'correction_requested'].includes(r.status)) throw Error('Submitted report attachments are locked.');
+  if (!canChangeReport(r as { status: string })) throw Error('Submitted report attachments are locked.');
   const parts = await getDocsFromServer(collection(firestore, 'cadenceFiles', id, 'parts'));
   exec(loaded.db, 'DELETE FROM report_files WHERE id=?', id);
   audit(loaded.db, loaded.user.id, 'report.file_removed', 'report_file', id, f.original_name);

@@ -178,6 +178,15 @@ test('authenticated reporting, management, export and audit integration', async 
         ...r.data,
         submit: true
       })).status, 409);
+      assert.equal((await request('/reports/' + reportId + '/edit', admin, { version })).status, 403);
+      assert.equal((await request('/reports/' + reportId + '/edit', employee, { version: version + 1 })).status, 409);
+      const opened = await request('/reports/' + reportId + '/edit', employee, { version });
+      assert.equal(opened.status, 200);
+      assert.equal(opened.data.employee_edit_count, 1);
+      assert.equal(opened.data.employee_edit_open, 1);
+      assert.equal(opened.data.first_submitted_at, r.data.first_submitted_at);
+      version = opened.data.version;
+      assert.equal((await request('/reports/' + reportId + '/edit', employee, { version })).status, 409);
     });
     await t.test('cross-employee direct report, analytics, export and target access is forbidden', async () => {
       assert.equal((await request('/reports/' + reportId, other)).status, 403);
@@ -211,6 +220,11 @@ test('authenticated reporting, management, export and audit integration', async 
         submit: true
       });
       assert.equal(corrected.data.status, 'corrected');
+      assert.equal(corrected.data.employee_edit_open, 0);
+      assert.equal(corrected.data.employee_edit_count, 1);
+      assert.equal((await request('/reports/' + reportId + '/edit', employee, { version: corrected.data.version })).status, 409);
+      assert.equal((await request('/reports', employee, { ...corrected.data, submit: false })).status, 409);
+      assert.equal((await request('/reports/' + reportId + '/review', admin, { action: 'request_correction', comment: 'Cannot grant another edit' })).status, 409);
       assert.equal((await request('/reports/' + reportId + '/review', admin, {
         action: 'approve',
         comment: 'Fixture approved',
@@ -290,7 +304,7 @@ test('authenticated reporting, management, export and audit integration', async 
         active: false
       })).status, 400);
     });
-    await t.test('target and scoring configuration enforce history and 100% weights', async () => {
+    await t.test('admin target and scoring mutations are disabled and preserve historical targets', async () => {
       const next = new Date(date + 'T12:00:00Z');
       next.setUTCDate(next.getUTCDate() + 1);
       const tomorrow = next.toISOString().slice(0, 10);
@@ -301,8 +315,9 @@ test('authenticated reporting, management, export and audit integration', async 
         frequency: 'daily',
         start_date: tomorrow,
         weight: 1
-      })).status, 201);
-      assert.equal(one(db, 'SELECT end_date FROM assignments WHERE id=?', aid)!.end_date, date);
+      })).status, 403);
+      assert.equal(one(db, 'SELECT end_date FROM assignments WHERE id=?', aid)!.end_date, null);
+      assert.equal((await request('/assignments/' + aid + '/end', admin, { end_date: tomorrow })).status, 403);
       assert.equal((await request('/scoring', admin, {
         effective_date: tomorrow,
         weights: {
@@ -317,7 +332,7 @@ test('authenticated reporting, management, export and audit integration', async 
           min: 0,
           label: 'Default'
         }]
-      })).status, 400);
+      })).status, 403);
     });
     await t.test('period reflection, score override and immutable audit history are persisted', async () => {
       assert.equal((await request('/reflections', employee, {
@@ -341,7 +356,8 @@ test('authenticated reporting, management, export and audit integration', async 
       assert.ok(all(db, "SELECT * FROM audit_logs WHERE action='score.overridden'").length);
       assert.throws(() => exec(db, 'DELETE FROM audit_logs'));
     });
-    await t.test('custom average metrics can be created and archived without erasing history', async () => {
+    await t.test('admin KPI creation and changes are disabled without erasing historical metrics', async () => {
+      const before = all(db, 'SELECT * FROM kpis');
       const r = await request('/kpis', admin, {
         name: 'Fixture custom accuracy',
         description: 'Reviewed rate',
@@ -350,12 +366,11 @@ test('authenticated reporting, management, export and audit integration', async 
         kind: 'quality',
         aggregation: 'average'
       });
-      assert.equal(r.status, 201);
-      assert.equal(one(db, 'SELECT aggregation FROM kpis WHERE id=?', r.data.id)!.aggregation, 'average');
-      assert.equal((await request('/kpis/' + r.data.id + '/status', admin, {
+      assert.equal(r.status, 403);
+      assert.equal((await request('/kpis/1/status', admin, {
         active: false
-      })).status, 200);
-      assert.equal(one(db, 'SELECT active FROM kpis WHERE id=?', r.data.id)!.active, 0);
+      })).status, 403);
+      assert.deepEqual(all(db, 'SELECT * FROM kpis'), before);
     });
     await t.test('logout invalidates session', async () => {
       assert.equal((await request('/auth/logout', employee, {})).status, 200);

@@ -21,6 +21,12 @@ Initialize Authentication with **Get started** in the Firebase console. `node sc
 
 ## Runtime and permissions
 
+Reports allow one employee editing session after submission. The employee opens **Edit daily report (one chance)**, saves any changes or attachments during that session, and chooses **Resubmit and lock** to close it permanently. The allowance is stored with the report and enforced by Firestore rules. Administrators cannot grant a second edit. Drafts remain editable before their initial submission.
+
+When upgrading a workspace created before this feature, run `node scripts/firebase-report-edit-upgrade.mjs --account OWNER_EMAIL` before deploying the new rules and frontend. The idempotent upgrade only adds missing edit flags and increments the aggregate revision; it preserves report contents, history, and authoritative submission timestamps. It never resets an existing edit allowance.
+
+Admin target, KPI, and scoring-model mutations are disabled. Historical definitions and assignments remain readable for existing calculations. Company holidays and score overrides are no longer shown in admin settings. On **Uploaded files**, selecting one or more files displays graphs only, with totals or row-weighted averages across every selected file; the raw-row table and original-file download controls have been removed from that page.
+
 The website talks directly to Firebase Authentication and Firestore. Existing SQL scoring calculations run in an in-memory `sql.js` projection of **only the records the signed-in account may read**. Firebase is authoritative; refreshing or closing a browser does not erase data.
 
 - `cadenceProfiles/{authUid}` stores safe membership, employee settings, assignment history, leave, and reflections. Password hashes and sessions are never included. Employees can read their own profile; administrators manage membership. Signing up for Firebase Authentication alone grants no workspace access.

@@ -36,6 +36,7 @@ test('report links and uploaded CSV rows are isolated and visible to admin dashb
     admin = await login('admin@example.test');
   const date = localToday();
   let fileId = '';
+  let secondFileId = '';
   try {
     const body = reportBody(date);
     body.activities[0].evidence = '';
@@ -95,6 +96,13 @@ test('report links and uploaded CSV rows are isolated and visible to admin dashb
         cookie: (await login('developer@example.test')).cookie
       }
     })).status, 403);
+    const secondUpload = await fetch(base + '/api/reports/' + reportId + '/files', {
+      method: 'POST',
+      headers: { cookie: employee.cookie, 'x-csrf-token': employee.csrf, 'content-type': 'text/csv', 'x-file-name': 'collective.csv' },
+      body: ['Replies', ...Array.from({ length: 10000 }, () => '2')].join('\r\n')
+    });
+    assert.equal(secondUpload.status, 201);
+    secondFileId = (await secondUpload.json()).file.id;
     const submitted = await fetch(base + '/api/reports', {
       method: 'POST',
       headers: {
@@ -117,10 +125,16 @@ test('report links and uploaded CSV rows are isolated and visible to admin dashb
     assert.equal(insights.status, 200);
     const dataset = await insights.json();
     assert.equal(dataset.rows.length, 1000);
-    assert.equal(dataset.files.length, 1);
+    assert.equal(dataset.files.length, 2);
     assert.equal(dataset.files[0].user_name, 'Fixture Outreach');
     assert.equal(dataset.rows[0].values.Replies, '4');
     assert.equal(dataset.rows[0].user_name, 'Fixture Outreach');
+    const combined = await (await fetch(base + '/api/admin/upload-data?start=' + date + '&end=' + date + '&files=' + [fileId, secondFileId].join(','), { headers: { cookie: admin.cookie } })).json();
+    assert.equal(combined.rows.length, 11000, 'Collective graphs must include rows beyond the old display limit.');
+    assert.equal(combined.rows.reduce((sum: number, row: { values: { Replies: string } }) => sum + Number(row.values.Replies), 0), 21005);
+    const metadata = await (await fetch(base + '/api/admin/upload-data?start=' + date + '&end=' + date + '&metadata=1', { headers: { cookie: admin.cookie } })).json();
+    assert.equal(metadata.files.length, 2);
+    assert.deepEqual(metadata.rows, []);
     assert.equal((await fetch(base + '/api/admin/upload-data?start=' + date + '&end=' + date, {
       headers: {
         cookie: employee.cookie
@@ -147,12 +161,12 @@ test('report links and uploaded CSV rows are isolated and visible to admin dashb
     });
     assert.equal(lockedDelete.status, 409);
   } finally {
-    if (fileId) {
-      const stored = one(db, 'SELECT storage_name FROM report_files WHERE id=?', fileId);
+    for (const cleanupId of [fileId, secondFileId].filter(Boolean)) {
+      const stored = one(db, 'SELECT storage_name FROM report_files WHERE id=?', cleanupId);
       if (stored) {
         const fs = await import('node:fs/promises');
         await fs.unlink('data/uploads/' + stored.storage_name).catch(() => {});
-        exec(db, 'DELETE FROM report_files WHERE id=?', fileId);
+        exec(db, 'DELETE FROM report_files WHERE id=?', cleanupId);
       }
     }
     server.closeAllConnections();

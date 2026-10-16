@@ -81,7 +81,13 @@ try {
   assert.equal(before.files.length, 2);
   const submitted = await api('/reports', { ...body, version: before.version, submit: true });
   assert.equal(submitted.status, 'submitted');
-  await assert.rejects(api('/reports', { ...body, version: submitted.version }), /Submitted reports require/);
+  await assert.rejects(api('/reports', { ...body, version: submitted.version }), /locked/);
+  const opened = await api(`/reports/${draft.id}/edit`, { version: submitted.version });
+  assert.equal(opened.employee_edit_count, 1);
+  assert.equal(opened.employee_edit_open, 1);
+  await assert.rejects(api(`/reports/${draft.id}/edit`, { version: opened.version }), /already been used/);
+  const extra = await upload(`/reports/${draft.id}/files`, new File(['Task,Count\nReview,7'], 'edit.csv'));
+  await api('/files/' + extra.file.id, undefined, 'DELETE');
   let cloud;
   await env.withSecurityRulesDisabled(async ctx => { cloud = await getDoc(doc(ctx.firestore(), 'cadenceReports/2_2026-10-15')); });
   assert.ok(cloud.get('firstSubmittedAt') instanceof Timestamp);
@@ -100,6 +106,7 @@ try {
   await assert.rejects(readFile(attached.file.id, 'bytes'));
   await api('/auth/logout', {});
   await api('/auth/login', { email: 'admin@example.test', password: TEST_PASSWORD });
+  for (const path of ['/assignments', '/kpis', '/kpis/1/status', '/scoring']) await assert.rejects(api(path, {}), /disabled/);
   await api(`/reports/${draft.id}/review`, { action: 'request_correction', comment: 'Please clarify the outcome.', quality: 80, learning: 90, improvement_plan: '' });
   assert.equal((await api('/admin/upload-data?start=2026-10-15&end=2026-10-15')).files.length, 0);
   const stale = await loadWorkspace(), current = await loadWorkspace();
@@ -112,6 +119,13 @@ try {
   const correction = await api(`/reports/${draft.id}`);
   const corrected = await api('/reports', { ...body, version: correction.version, submit: true, achievements: 'Clarified fixture outcome' });
   assert.equal(corrected.status, 'corrected');
+  assert.equal(corrected.employee_edit_open, 0);
+  assert.equal(corrected.employee_edit_count, 1);
+  await assert.rejects(api(`/reports/${draft.id}/edit`, { version: corrected.version }), /already been used/);
+  await assert.rejects(upload(`/reports/${draft.id}/files`, new File(['Locked'], 'locked.txt')), /one-time edit/);
+  let afterCorrection;
+  await env.withSecurityRulesDisabled(async ctx => { afterCorrection = await getDoc(doc(ctx.firestore(), 'cadenceReports/2_2026-10-15')); });
+  assert.equal(afterCorrection.get('firstSubmittedAt').toMillis(), cloud.get('firstSubmittedAt').toMillis());
   assert.equal((await api('/notifications')).some(n => n.kind === 'review'), true);
   await api('/notifications/read', {});
   assert.equal((await api('/bootstrap')).unread, 0);

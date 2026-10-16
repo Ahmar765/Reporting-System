@@ -4,14 +4,14 @@ import { localAttachments, type AttachmentStore } from './attachments.js';
 import { parseUploadedTable } from './upload-data.js';
 import { securityHeaders, rateLimit } from './security.js';
 import { z, ZodError } from 'zod/v4';
-import { DateTime } from './calendar.js';
 import { all, one, exec, now, transaction, audit, type DB, type Row } from './db.js';
 import { createSession, digest, verifyPassword, hashPassword, publicUser } from './auth.js';
-import { date, id, profile, reportInput, assignmentInput, scoreInput, clock, zone, text } from './validation.js';
+import { date, id, profile, reportInput, clock, zone, text } from './validation.js';
 import { settings, localToday, isWorking, summary, days, reportingStatus } from './domain.js';
 import { runJobs } from './scheduler.js';
 import { download } from './exports.js';
 import { notificationSqlFilter } from './notification-policy.js';
+import { canChangeReport, canStartReportEdit } from './report-edit-policy.js';
 declare module 'express-serve-static-core' {
   interface Request {
     user: Row;
@@ -287,92 +287,13 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       id: Number(r.lastInsertRowid)
     });
   });
-  app.post('/api/kpis', (req, res) => {
-    admin(req);
-    const b = z.object({
-      name: z.string().min(2).max(120),
-      description: text,
-      category_id: id,
-      unit: z.string().min(1).max(50),
-      kind: z.enum(['achievement', 'quality', 'impact']),
-      aggregation: z.enum(['sum', 'average']).default('sum')
-    }).parse(req.body);
-    const r = exec(db, 'INSERT INTO kpis(name,description,category_id,unit,kind,aggregation) VALUES(?,?,?,?,?,?)', b.name, b.description, b.category_id, b.unit, b.kind, b.aggregation);
-    audit(db, req.user.id, 'kpi.created', 'kpi', Number(r.lastInsertRowid), null, b);
-    res.status(201).json({
-      id: Number(r.lastInsertRowid)
+  // Historical targets remain available for existing report calculations.
+  for (const path of ['/api/kpis', '/api/kpis/:id/status', '/api/assignments', '/api/assignments/:id/end', '/api/scoring']) {
+    app.post(path, (req, _res) => {
+      admin(req);
+      fail(403, 'Setting employee targets, KPIs, and scoring models is disabled.');
     });
-  });
-  app.post('/api/kpis/:id/status', (req, res) => {
-    admin(req);
-    const kid = id.parse(req.params.id);
-    const b = z.object({
-      active: z.boolean()
-    }).parse(req.body);
-    const before = one(db, 'SELECT * FROM kpis WHERE id=?', kid) || fail(404, 'KPI not found.');
-    transaction(db, () => {
-      exec(db, 'UPDATE kpis SET active=? WHERE id=?', +b.active, kid);
-      audit(db, req.user.id, 'kpi.status', 'kpi', kid, before, b);
-    });
-    res.json({
-      ok: true
-    });
-  });
-  app.post('/api/assignments', (req, res) => {
-    admin(req);
-    const b = assignmentInput.parse(req.body);
-    getUser(b.user_id);
-    const kpi = one(db, 'SELECT * FROM kpis WHERE id=? AND active=1', b.kpi_id) || fail(400, 'Select an active KPI.');
-    const today = localToday(settings(db).timezone);
-    if (b.start_date < today) fail(400, 'New targets must start today or later to preserve history.');
-    if (one(db, 'SELECT id FROM reports WHERE user_id=? AND date>=? AND status<>?', b.user_id, b.start_date, 'draft')) fail(409, 'A submitted report already exists in this target period.');
-    const aid = transaction(db, () => {
-      const previous = all(db, 'SELECT * FROM assignments WHERE user_id=? AND kpi_id=? AND (end_date IS NULL OR end_date>=?) AND start_date<=?', b.user_id, b.kpi_id, b.start_date, b.end_date || '9999-12-31');
-      for (const a of previous) {
-        if (a.start_date >= b.start_date) fail(409, 'Overlapping future target. End or replace it before assigning.');
-        const end = DateTime.fromISO(b.start_date).minus({
-          days: 1
-        }).toISODate()!;
-        exec(db, 'UPDATE assignments SET end_date=? WHERE id=?', end, a.id);
-        audit(db, req.user.id, 'target.closed', 'assignment', a.id, a, {
-          ...a,
-          end_date: end
-        });
-      }
-      const r = exec(db, 'INSERT INTO assignments(kpi_id,user_id,target,frequency,start_date,end_date,weight,minimum_quality,created_at) VALUES(?,?,?,?,?,?,?,?,?)', b.kpi_id, b.user_id, b.target, b.frequency, b.start_date, b.end_date, b.weight, b.minimum_quality, now());
-      exec(db, 'INSERT OR IGNORE INTO user_categories VALUES(?,?)', b.user_id, kpi.category_id);
-      audit(db, req.user.id, 'target.assigned', 'assignment', Number(r.lastInsertRowid), null, b);
-      return Number(r.lastInsertRowid);
-    });
-    res.status(201).json({
-      id: aid
-    });
-  });
-  app.post('/api/assignments/:id/end', (req, res) => {
-    admin(req);
-    const a = one(db, 'SELECT * FROM assignments WHERE id=?', id.parse(req.params.id)) || fail(404, 'Target not found.');
-    const b = z.object({
-      end_date: date
-    }).parse(req.body);
-    if (b.end_date < localToday(settings(db).timezone) || b.end_date < a.start_date) fail(400, 'End date must be today or later and after the start.');
-    transaction(db, () => {
-      exec(db, 'UPDATE assignments SET end_date=? WHERE id=?', b.end_date, a.id);
-      audit(db, req.user.id, 'target.ended', 'assignment', a.id, a, b);
-    });
-    res.json({
-      ok: true
-    });
-  });
-  app.post('/api/scoring', (req, res) => {
-    admin(req);
-    const b = scoreInput.parse(req.body);
-    if (b.effective_date <= localToday(settings(db).timezone)) fail(400, 'Score configuration changes must take effect on a future date.');
-    const r = exec(db, 'INSERT INTO scoring_configs(user_id,role_id,effective_date,weights,cap,bands,created_at) VALUES(?,?,?,?,?,?,?)', b.user_id, b.role_id, b.effective_date, JSON.stringify(b.weights), b.cap, JSON.stringify(b.bands), now());
-    audit(db, req.user.id, 'scoring.configured', 'scoring', Number(r.lastInsertRowid), null, b);
-    res.status(201).json({
-      ok: true
-    });
-  });
+  }
   app.get('/api/reports', (req, res) => {
     const {
       start,
@@ -444,7 +365,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       let r = one(db, 'SELECT * FROM reports WHERE user_id=? AND date=?', user.id, b.date);
       if (r && r.version !== b.version) fail(409, 'This report changed. Reopen it before saving.');
       if (!r && b.version !== 0) fail(409, 'Report version is invalid.');
-      if (r && !['draft', 'correction_requested'].includes(r.status)) fail(409, 'Submitted reports require an administrator correction request.');
+      if (r && !canChangeReport(r as { status: string })) fail(409, 'This report is locked. Open its one-time edit before making changes.');
       const before = r ? {
         ...r,
         activities: activitiesFor(r.id),
@@ -463,7 +384,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
         const activityId = Number(inserted.lastInsertRowid);
         for (const url of a.links.length ? a.links : a.evidence ? [a.evidence] : []) exec(db, 'INSERT INTO activity_links(activity_id,url,created_at) VALUES(?,?,?)', activityId, url, stamp);
       }
-      if (b.submit) exec(db, 'UPDATE reports SET first_submitted_at=COALESCE(first_submitted_at,?) WHERE id=?', stamp, r.id);
+      if (b.submit) exec(db, 'UPDATE reports SET first_submitted_at=COALESCE(first_submitted_at,?),employee_edit_open=0 WHERE id=?', stamp, r.id);
       const after: Row = {
         ...one(db, 'SELECT * FROM reports WHERE id=?', r.id),
         activities: activitiesFor(r.id),
@@ -471,6 +392,22 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       };
       exec(db, 'INSERT INTO report_revisions(report_id,version,snapshot,actor_id,created_at) VALUES(?,?,?,?,?)', r.id, after.version, JSON.stringify(after), user.id, stamp);
       audit(db, user.id, b.submit ? 'report.' + status : 'report.saved', 'report', r.id, before, after);
+      return after;
+    });
+    res.json(result);
+  });
+  app.post('/api/reports/:id/edit', (req, res) => {
+    const report = getReport(req, req.params.id);
+    if (req.user.access !== 'employee' || report.user_id !== req.user.id) fail(403, 'Only the employee can open their one-time edit.');
+    const b = z.object({ version: z.number().int().positive() }).parse(req.body);
+    const result = transaction(db, () => {
+      const current = one(db, 'SELECT * FROM reports WHERE id=?', report.id)!;
+      if (current.version !== b.version) fail(409, 'This report changed. Reopen it before editing.');
+      if (!canStartReportEdit(current as { status: string })) fail(409, 'The one-time edit has already been used or this report is still a draft.');
+      exec(db, 'UPDATE reports SET status=?,employee_edit_count=1,employee_edit_open=1,version=version+1,updated_at=? WHERE id=?', 'correction_requested', now(), report.id);
+      const after: Row = { ...one(db, 'SELECT * FROM reports WHERE id=?', report.id), activities: activitiesFor(report.id), files: fileMetadata(report.id) };
+      exec(db, 'INSERT INTO report_revisions(report_id,version,snapshot,actor_id,created_at) VALUES(?,?,?,?,?)', report.id, after.version, JSON.stringify(after), req.user.id, now());
+      audit(db, req.user.id, 'report.edit_opened', 'report', report.id, current, after);
       return after;
     });
     res.json(result);
@@ -493,7 +430,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
     limit: '5mb'
   }), (req, res) => {
     const report = getReport(req, req.params.id);
-    if (!['draft', 'correction_requested'].includes(report.status)) fail(409, 'Attachments are locked after submission. Ask an administrator to request a correction.');
+    if (!canChangeReport(report as { status: string })) fail(409, 'Open the report’s one-time edit before changing attachments.');
     if (Number(one(db, 'SELECT count(*) AS n FROM report_files WHERE report_id=?', report.id)?.n || 0) >= 10) fail(400, 'A report can contain up to 10 attached files.');
     const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     if (!body.length) fail(400, 'Choose a non-empty file up to 5 MB.');
@@ -558,7 +495,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
     if (!f) fail(404, 'File not found.');
     scope(req, f.user_id);
     const report = getReport(req, f.report_id);
-    if (!['draft', 'correction_requested'].includes(report.status)) fail(409, 'Submitted report attachments are locked.');
+    if (!canChangeReport(report as { status: string })) fail(409, 'Submitted report attachments are locked.');
     transaction(db, () => {
       exec(db, 'DELETE FROM report_files WHERE id=?', f.id);
       audit(db, req.user.id, 'report.file_removed', 'report_file', f.id, f.original_name, null);
@@ -602,8 +539,8 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       rowClauses.push('f.id IN (' + selectedFiles.map(() => '?').join(',') + ')');
       rowParams.push(...selectedFiles);
     }
-    const records = all(db, "SELECT fr.file_id,fr.row_number,fr.values_json,f.report_id,f.original_name,f.extension,f.sheet_name,f.columns_json,u.id AS user_id,u.name AS user_name,u.employee_code,u.role_id,r.date FROM report_file_rows fr JOIN report_files f ON f.id=fr.file_id JOIN reports r ON r.id=f.report_id JOIN users u ON u.id=r.user_id WHERE r.status IN ('submitted','corrected','approved') AND " + rowClauses.join(' AND ') + ' ORDER BY r.date DESC,f.created_at DESC,fr.row_number LIMIT 10000', ...(rowParams as any[]));
-    const headers = [...new Set(files.flatMap(x => x.columns as string[]))];
+    const records = req.query.metadata === '1' ? [] : all(db, "SELECT fr.file_id,fr.row_number,fr.values_json,f.report_id,f.original_name,f.extension,f.sheet_name,f.columns_json,u.id AS user_id,u.name AS user_name,u.employee_code,u.role_id,r.date FROM report_file_rows fr JOIN report_files f ON f.id=fr.file_id JOIN reports r ON r.id=f.report_id JOIN users u ON u.id=r.user_id WHERE r.status IN ('submitted','corrected','approved') AND " + rowClauses.join(' AND ') + ' ORDER BY r.date DESC,f.created_at DESC,fr.row_number', ...(rowParams as any[]));
+    const headers = [...new Set(files.filter((file: Row) => !selectedFiles.length || selectedFiles.includes(file.id)).flatMap(x => x.columns as string[]))];
     res.json({
       start,
       end,
@@ -624,7 +561,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
         values: JSON.parse(x.values_json)
       })),
       total: records.length,
-      limit: 10000
+      limit: null
     });
   });
   app.post('/api/reports/:id/review', (req, res) => {
@@ -638,6 +575,7 @@ export function createApp(db: DB, options: { attachments?: AttachmentStore; sess
       learning: z.number().min(0).max(100).nullable().default(null)
     }).parse(req.body);
     if (r.status === 'draft' || r.status === 'correction_requested' && b.action === 'approve') fail(409, 'Review requires a submitted or corrected report.');
+    if (b.action === 'request_correction' && r.employee_edit_count === 1 && r.employee_edit_open !== 1) fail(409, 'This report has already used its one-time edit. You can still comment or approve.');
     transaction(db, () => {
       exec(db, 'INSERT INTO feedback(report_id,user_id,actor_id,comment,improvement_plan,quality,learning,created_at) VALUES(?,?,?,?,?,?,?,?)', r.id, r.user_id, req.user.id, b.comment, b.improvement_plan, b.quality, b.learning, now());
       if (b.action !== 'comment') {

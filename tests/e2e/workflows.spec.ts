@@ -112,32 +112,16 @@ test('employee drafts, submits and admin reviews a real persisted daily report',
   await page.getByRole('button', { name: 'View Fixture Outreach' }).click();
   await expect(page.getByRole('heading', { name: 'Fixture Outreach’s overview' })).toBeVisible();
   const individualUploads = page.locator('.uploaded-insights');
-  const prospectFilter = individualUploads.getByLabel('Filter · Prospect');
-  await expect(prospectFilter).toBeVisible();
-  await expect(prospectFilter.locator('option', { hasText: 'Northstar' })).toHaveCount(1);
-  await prospectFilter.selectOption({ label: 'Northstar' });
-  await expect(individualUploads.locator('.uploaded-table-heading + .table-scroll tbody tr')).toHaveCount(1);
-  await expect(individualUploads.locator('.uploaded-table-heading + .table-scroll tbody')).toContainText('Northstar');
-  await prospectFilter.selectOption('');
-  await page.getByRole('button', {
-    name: 'Uploaded files',
-    exact: true
-  }).click();
-  await expect(page.getByRole('heading', {
-    name: 'Uploaded report data'
-  })).toBeVisible();
-  await expect(page.getByRole('heading', {
-    name: 'Metric profile'
-  })).toBeVisible();
-  await expect(page.getByRole('heading', {
-    name: 'Uploaded items'
-  })).toBeVisible();
-  await expect(page.getByRole('cell', {
-    name: 'Fixture Outreach'
-  }).first()).toBeVisible();
-  await expect(page.getByRole('cell', {
-    name: 'fixture-leads.csv'
-  }).first()).toBeVisible();
+  await expect(individualUploads.getByRole('heading', { name: 'Uploaded file graphs' })).toBeVisible();
+  await individualUploads.getByRole('checkbox', { name: /fixture-leads.csv/ }).check();
+  await expect(individualUploads.getByRole('img', { name: /across 1 selected files/ })).toBeVisible();
+  await expect(individualUploads.locator('table')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Uploaded files', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Uploaded file graphs' })).toBeVisible();
+  await page.getByRole('checkbox', { name: /fixture-leads.csv/ }).check();
+  await expect(page.getByRole('img', { name: /across 1 selected files/ })).toBeVisible();
+  await expect(page.locator('.uploaded-insights table')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Targets & KPIs', exact: true })).toHaveCount(0);
   await page.screenshot({
     path: 'test-results/dashboard-desktop.png',
     fullPage: true

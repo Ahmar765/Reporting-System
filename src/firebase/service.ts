@@ -70,7 +70,7 @@ export async function firebaseApi(path: string, body?: any, method = body === un
           }));
         }
       }
-      if (path.includes('/upload-data')) {
+      if (path.includes('/upload-data') && new URL(path, 'https://cadence.local').searchParams.get('metadata') !== '1') {
         const url = new URL(path, 'https://cadence.local');
         let files = all(db, 'SELECT f.* FROM report_files f JOIN reports r ON r.id=f.report_id WHERE r.date BETWEEN ? AND ?', url.searchParams.get('start') || '0001-01-01', url.searchParams.get('end') || '9999-12-31');
         const match = /^\/reports\/(\d+)\//.exec(path);

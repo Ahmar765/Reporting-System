@@ -8,7 +8,7 @@ service cloud.firestore {
     function own(owner) { return active() && me().row.id == owner; }
     function scope(owner) { return admin() || own(owner); }
     function stamp(d) { return d.actorUid == request.auth.uid && d.changedAt == request.time; }
-    function editable(r) { return r.report.status in ['draft', 'correction_requested']; }
+    function editable(r) { return r.report.status == 'draft' || r.report.status == 'correction_requested' && r.report.employee_edit_count == 1 && r.report.employee_edit_open == 1; }
     function reportAfter(key) { return getAfter(/databases/$(database)/documents/cadenceReports/$(key)).data; }
     function reportBefore(key) { return get(/databases/$(database)/documents/cadenceReports/$(key)).data; }
     function validProfile(d, uid) {
@@ -22,11 +22,13 @@ service cloud.firestore {
     match /cadenceProfiles/{uid} {
       allow get: if signedIn() && (request.auth.uid == uid || admin());
       allow list: if admin();
-      allow create: if admin() && validProfile(request.resource.data, uid) && request.resource.data.revision == 0 && stamp(request.resource.data);
+      allow create: if admin() && validProfile(request.resource.data, uid) && request.resource.data.revision == 0 && stamp(request.resource.data)
+        && request.resource.data.tables.assignments.size() == 0;
       allow update: if active() && validProfile(request.resource.data, uid) && stamp(request.resource.data)
         && request.resource.data.revision == resource.data.revision + 1
         && request.resource.data.row.id == resource.data.row.id
         && request.resource.data.row.email == resource.data.row.email
+        && request.resource.data.tables.assignments == resource.data.tables.assignments
         && (admin() && (uid != request.auth.uid || request.resource.data.row.access == 'admin' && request.resource.data.row.active == 1)
           || uid == request.auth.uid && request.resource.data.row == resource.data.row
             && request.resource.data.category_ids == resource.data.category_ids
@@ -38,7 +40,9 @@ service cloud.firestore {
       allow update: if admin() && stamp(request.resource.data)
         && request.resource.data.keys().hasOnly(['revision','tables','reviewers','actorUid','changedAt'])
         && request.resource.data.revision == resource.data.revision + 1
-        && request.resource.data.tables.keys().hasOnly(['roles','categories','kpis','settings','scoring_configs','holidays']);
+        && request.resource.data.tables.keys().hasOnly(['roles','categories','kpis','settings','scoring_configs','holidays'])
+        && request.resource.data.tables.get('kpis', []) == resource.data.tables.get('kpis', [])
+        && request.resource.data.tables.get('scoring_configs', []) == resource.data.tables.get('scoring_configs', []);
       allow create, delete: if false;
     }
     function validReport(d, key) {
@@ -48,7 +52,9 @@ service cloud.firestore {
         && d.report.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && d.report.id is int && d.report.version is int
         && d.report.status in ['draft','submitted','correction_requested','corrected','approved']
-        && d.report.keys().hasOnly(['id','user_id','date','status','achievements','blockers','missed_reason','lessons','suggestions','next_plan','assistance','created_at','updated_at','submitted_at','version','first_submitted_at'])
+        && d.report.keys().hasOnly(['id','user_id','date','status','achievements','blockers','missed_reason','lessons','suggestions','next_plan','assistance','created_at','updated_at','submitted_at','version','first_submitted_at','employee_edit_count','employee_edit_open'])
+        && d.report.employee_edit_count in [0,1] && d.report.employee_edit_open in [0,1]
+        && (d.report.employee_edit_open == 0 || d.report.employee_edit_count == 1 && d.report.status == 'correction_requested')
         && d.activities is list && d.activities.size() <= 100
         && d.files is map && d.files.size() <= 10 && d.feedback is list;
     }
@@ -69,6 +75,23 @@ service cloud.firestore {
         && h.state.report == d.report && h.state.activities == d.activities
         && h.state.files == d.files && h.state.feedback == d.feedback;
     }
+    function startEmployeeEdit(d, old) {
+      return me().row.access == 'employee'
+        && old.report.status in ['submitted','corrected','approved','correction_requested']
+        && old.report.employee_edit_count == 0 && old.report.employee_edit_open == 0
+        && d.report.employee_edit_count == 1 && d.report.employee_edit_open == 1
+        && d.report.status == 'correction_requested' && d.report.version == old.report.version + 1
+        && d.report.diff(old.report).affectedKeys().hasOnly(['status','version','updated_at','employee_edit_count','employee_edit_open'])
+        && d.activities == old.activities && d.files == old.files;
+    }
+    function saveEmployeeReport(d, old) {
+      return editable(old) && d.report.employee_edit_count == old.report.employee_edit_count
+        && d.report.employee_edit_open == (d.report.status == 'corrected' ? 0 : old.report.employee_edit_open)
+        && (d.report == old.report && d.activities == old.activities
+          || d.report.version == old.report.version + 1
+            && (old.report.status == 'draft' && d.report.status in ['draft','submitted']
+              || old.report.status == 'correction_requested' && d.report.status in ['correction_requested','corrected']));
+    }
     match /cadenceReports/{key} {
       allow get: if active() && (resource == null ? admin() || key.matches('^' + string(me().row.id) + '_[0-9]{4}-[0-9]{2}-[0-9]{2}$') : scope(resource.data.owner));
       allow list: if scope(resource.data.owner);
@@ -78,6 +101,7 @@ service cloud.firestore {
         && request.resource.data.report.id >= request.resource.data.owner * 100000000
         && request.resource.data.report.id < (request.resource.data.owner + 1) * 100000000
         && request.resource.data.report.status in ['draft','submitted'] && request.resource.data.feedback.size() == 0
+        && request.resource.data.report.employee_edit_count == 0 && request.resource.data.report.employee_edit_open == 0
         && request.resource.data.files.size() == 0 && request.resource.data.createdAt == request.time
         && request.resource.data.firstSubmittedAt == (request.resource.data.report.status == 'submitted' ? request.time : null)
         && request.resource.data.submittedAt == request.resource.data.firstSubmittedAt
@@ -88,19 +112,16 @@ service cloud.firestore {
         && submissionStamp(request.resource.data, resource.data)
         && (request.resource.data.report.version == resource.data.report.version || historyMatches(request.resource.data, key))
         && (
-          own(resource.data.owner) && editable(resource.data)
+          own(resource.data.owner)
           && request.resource.data.feedback == resource.data.feedback
-          && (request.resource.data.report == resource.data.report
-            || request.resource.data.report.version == resource.data.report.version + 1
-              && (resource.data.report.status == 'draft' && request.resource.data.report.status in ['draft','submitted']
-                || resource.data.report.status == 'correction_requested' && request.resource.data.report.status in ['correction_requested','corrected']))
+          && (startEmployeeEdit(request.resource.data, resource.data) || saveEmployeeReport(request.resource.data, resource.data))
           || admin() && request.resource.data.activities == resource.data.activities
             && request.resource.data.files == resource.data.files
             && request.resource.data.report.diff(resource.data.report).affectedKeys().hasOnly(['status','version','updated_at'])
             && resource.data.report.status != 'draft'
             && (request.resource.data.report == resource.data.report
               || request.resource.data.report.version == resource.data.report.version + 1
-                && (request.resource.data.report.status == 'correction_requested'
+                && (request.resource.data.report.status == 'correction_requested' && (resource.data.report.employee_edit_count == 0 || resource.data.report.employee_edit_open == 1)
                   || resource.data.report.status in ['submitted','corrected','approved'] && request.resource.data.report.status == 'approved'))
         );
       allow delete: if false;

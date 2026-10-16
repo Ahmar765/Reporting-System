@@ -14,21 +14,10 @@ export function Settings({
 }: Props) {
   const [settings, setSettings] = useState(data.settings);
   const [error, setError] = useState('');
-  const [holiday, setHoliday] = useState({
-    date: localDate(data.settings.timezone),
-    name: ''
-  });
   const [leave, setLeave] = useState({
     user_id: data.users[0]?.id,
     start_date: localDate(data.settings.timezone),
     end_date: localDate(data.settings.timezone),
-    reason: ''
-  });
-  const [override, setOverride] = useState({
-    user_id: data.users[0]?.id,
-    start: localDate(data.settings.timezone),
-    end: localDate(data.settings.timezone),
-    score: 75,
     reason: ''
   });
   const [password, setPassword] = useState({
@@ -79,16 +68,7 @@ export function Settings({
             } catch (e) {
               setError((e as Error).message);
             }
-          }}>{firebaseMode ? 'Refresh notifications' : 'Run reminders now'}</button></div></form><div className="dashboard-grid"><form className="panel" onSubmit={e => {
-          e.preventDefault();
-          void submit('/holidays', holiday);
-        }}><h2>Company holidays</h2><Field label="Holiday date"><input required type="date" value={holiday.date} onChange={e => setHoliday({
-              ...holiday,
-              date: e.target.value
-            })} /></Field><Field label="Holiday name"><input required value={holiday.name} onChange={e => setHoliday({
-              ...holiday,
-              name: e.target.value
-            })} /></Field><button className="secondary">Add holiday</button><div className="compact-list">{data.holidays.map((h: Row) => <div key={h.id}><strong>{h.name}</strong><span>{h.date}</span></div>)}</div></form><form className="panel" onSubmit={e => {
+          }}>{firebaseMode ? 'Refresh notifications' : 'Run reminders now'}</button></div></form><form className="panel" onSubmit={e => {
           e.preventDefault();
           void submit('/leave', leave);
         }}><h2>Approve employee leave</h2><Field label="Employee"><select value={leave.user_id} onChange={e => setLeave({
@@ -103,25 +83,7 @@ export function Settings({
               })} /></Field></div><Field label="Reason"><input required value={leave.reason} onChange={e => setLeave({
               ...leave,
               reason: e.target.value
-            })} /></Field><button className="secondary">Approve leave</button><div className="compact-list">{data.leave.map((l: Row) => <div key={l.id}><strong>{data.users.find((u: Row) => u.id === l.user_id)?.name}</strong><span>{l.start_date} — {l.end_date}</span></div>)}</div></form></div><form className="panel" onSubmit={e => {
-        e.preventDefault();
-        if (confirm('Record this score override? The reason will be permanently audited.')) void submit('/overrides', override);
-      }}><h2>Auditable score override</h2><div className="form-grid three"><Field label="Employee"><select value={override.user_id} onChange={e => setOverride({
-              ...override,
-              user_id: Number(e.target.value)
-            })}>{data.users.map((u: Row) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field><Field label="Period start"><input required type="date" value={override.start} onChange={e => setOverride({
-              ...override,
-              start: e.target.value
-            })} /></Field><Field label="Period end"><input required type="date" value={override.end} onChange={e => setOverride({
-              ...override,
-              end: e.target.value
-            })} /></Field><Field label="Override score"><input type="number" min="0" max="100" step="0.01" value={override.score} onChange={e => setOverride({
-              ...override,
-              score: Number(e.target.value)
-            })} /></Field><Field label="Reason (required, 10+ characters)"><textarea required minLength={10} value={override.reason} onChange={e => setOverride({
-              ...override,
-              reason: e.target.value
-            })} /></Field></div><button className="secondary">Record override</button></form></>}
+            })} /></Field><button className="secondary">Approve leave</button><div className="compact-list">{data.leave.map((l: Row) => <div key={l.id}><strong>{data.users.find((u: Row) => u.id === l.user_id)?.name}</strong><span>{l.start_date} — {l.end_date}</span></div>)}</div></form></>}
  <form className="panel" onSubmit={async e => {
       e.preventDefault();
       try {
