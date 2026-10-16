@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import { api, type Row } from './api';
 import { Empty, Field } from './components';
+import { callingColumns, isCallingData, type CallingRow } from '../shared/calling-data';
+import CallingDataInsights from './CallingDataInsights';
 export default function ReportUploadInsights({
   reportId
 }: {
@@ -27,7 +29,7 @@ export default function ReportUploadInsights({
   const files: Row[] = source?.files || [];
   const selectedFile = fileId || String(files[0]?.id || '');
   const selected = files.find(f => String(f.id) === selectedFile);
-  const fileRows: Row[] = useMemo(() => (source?.rows || []).filter((r: Row) => !fileId || String(r.file_id) === fileId), [source, fileId]);
+  const fileRows: (Row & CallingRow)[] = useMemo(() => (source?.rows || []).filter((r: Row) => !fileId || String(r.file_id) === fileId), [source, fileId]);
   const rows: Row[] = useMemo(() => fileRows.filter((r: Row) => Object.entries(columnFilters).every(([key, value]) => !value || String(r.values[key] ?? '') === value)), [fileRows, columnFilters]);
   const columnOptions = useMemo(() => Object.fromEntries((selected?.columns || source?.headers || []).slice(0, 8).map((header: string) => [header, [...new Set<string>(fileRows.map((r: Row) => String(r.values[header] ?? '')).filter(Boolean))].sort((x, y) => x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' }))])), [fileRows, selected, source]);
   const headers: string[] = selected?.columns || source?.headers || [];
@@ -48,6 +50,7 @@ export default function ReportUploadInsights({
       average
     };
   });
+  if (source && !error && isCallingData(callingColumns(headers))) return <section className="panel uploaded-insights report-upload-insights"><div className="panel-heading"><div><span className="eyebrow">DAILY REPORT DATA</span><h2>Uploaded file dashboard</h2><p>Calling records attached to this report.</p></div></div><div className="filterbar"><Field label="Uploaded file"><select value={selectedFile} onChange={e => setFileId(e.target.value)}>{files.map(file => <option key={file.id} value={file.id}>{file.original_name}</option>)}</select></Field></div><CallingDataInsights key={selectedFile} headers={headers} rows={fileRows} /></section>;
   return <section className="panel uploaded-insights report-upload-insights"><div className="panel-heading"><div><span className="eyebrow">DAILY REPORT DATA</span><h2>Uploaded file dashboard</h2><p>Parsed spreadsheet data attached to this report. The radar scales each metric relative to its highest row value.</p></div><span className="badge">{rows.length} rows</span></div>
  {error ? <div role="alert" className="error">{error}<button type="button" className="secondary" onClick={load}>Retry</button></div> : !source ? <div className="skeleton" aria-busy="true" aria-label="Loading report spreadsheet data"><div /></div> : !files.length ? <Empty title="No files attached" text="CSV and XLSX files attached to this report will appear here with their parsed data." /> : <>
  <div className="filterbar upload-filters"><Field label="Uploaded file"><select value={selectedFile} onChange={e => { setFileId(e.target.value); setColumnFilters({}); }}>{files.map(f => <option key={f.id} value={f.id}>{f.original_name} · {f.row_count ? f.row_count + ' rows' : 'attachment'}</option>)}</select></Field>{headers.slice(0, 8).map(h => <Field key={h} label={'Filter · ' + h}><select aria-label={'Filter · ' + h} value={columnFilters[h] || ''} onChange={e => setColumnFilters({ ...columnFilters, [h]: e.target.value })}><option value="">All {h}</option>{(columnOptions[h] || []).map((value: string) => <option key={value} value={value}>{value}</option>)}</select></Field>)}</div>

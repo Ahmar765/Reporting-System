@@ -27,6 +27,8 @@ When upgrading a workspace created before this feature, run `node scripts/fireba
 
 Admin target, KPI, and scoring-model mutations are disabled. Historical definitions and assignments remain readable for existing calculations. Company holidays and score overrides are no longer shown in admin settings. On **Uploaded files**, selecting one or more files displays graphs only, with totals or row-weighted averages across every selected file; the raw-row table and original-file download controls have been removed from that page.
 
+Calling-data CSVs with **Owner, Remarks, Status, Response, and Next action item** use five combined attribute filters and record-count graphs on both the uploaded-files page and the report attachment dashboard. The original `Nex Action item` spelling, trailing header spaces, and numbered duplicate columns are supported. Identical values in repeated action columns count once per record. Filters include missing values, ignore case and extra whitespace, and apply across every selected file. Phone numbers are not totaled or averaged for this format.
+
 The website talks directly to Firebase Authentication and Firestore. Existing SQL scoring calculations run in an in-memory `sql.js` projection of **only the records the signed-in account may read**. Firebase is authoritative; refreshing or closing a browser does not erase data.
 
 - `cadenceProfiles/{authUid}` stores safe membership, employee settings, assignment history, leave, and reflections. Password hashes and sessions are never included. Employees can read their own profile; administrators manage membership. Signing up for Firebase Authentication alone grants no workspace access.
